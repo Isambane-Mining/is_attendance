@@ -1,10 +1,10 @@
 {
  "content": null,
- "creation": "2026-09-03 12:00:00.000000",
+ "creation": "2026-09-03 12:00:00",
  "docstatus": 0,
  "doctype": "Page",
  "idx": 0,
- "modified": "2026-09-03 12:00:00.000000",
+ "modified": "2026-09-15 15:15:22.116273",
  "modified_by": "Administrator",
  "module": "Isambane Attendance",
  "name": "attendance-dashboard",
@@ -25,6 +25,12 @@
   },
   {
    "role": "Payroll User"
+  },
+  {
+   "role": "Engineering Area Manager"
+  },
+  {
+   "role": "Production Area Manager"
   }
  ],
  "script": null,

@@ -22,6 +22,10 @@ fixtures = [
 		"Employee Checkin-isa_import_doctype",
 		"Employee Checkin-isa_import_reference",
 	]]]},
+	{"dt": "Custom DocPerm", "filters": [["parent", "=", "Employee Checkin"], ["role", "in", [
+		"Production Area Manager",
+		"Engineering Area Manager",
+	]]]},
 ]
 doc_events = {
 	"Employee Checkin": {
