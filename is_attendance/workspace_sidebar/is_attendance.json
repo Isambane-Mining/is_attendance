@@ -4,7 +4,7 @@
  "docstatus": 0,
  "doctype": "Workspace Sidebar",
  "header_icon": "milestone",
- "idx": 0,
+ "idx": 1,
  "items": [
   {
    "child": 0,
@@ -13,7 +13,7 @@
    "indent": 0,
    "keep_closed": 0,
    "label": "Home",
-   "link_to": "Attendance",
+   "link_to": "IS Attendance",
    "link_type": "Workspace",
    "show_arrow": 0,
    "type": "Link"
@@ -79,11 +79,11 @@
    "type": "Link"
   }
  ],
- "modified": "2026-09-09 15:37:38.781979",
+ "modified": "2026-09-22 09:19:55.159112",
  "modified_by": "Administrator",
  "module": "Isambane Attendance",
- "name": "Attendance",
+ "name": "IS Attendance",
  "owner": "Administrator",
  "standard": 1,
- "title": "Attendance"
+ "title": "IS Attendance"
 }
