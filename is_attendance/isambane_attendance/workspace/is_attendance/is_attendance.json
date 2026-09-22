@@ -1,7 +1,7 @@
 {
  "app": "is_attendance",
  "charts": [],
- "content": "[{\"id\":\"aTdc1WkQpZ\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Attendance</span>\",\"col\":12}},{\"id\":\"bR7fLmNq3H\",\"type\":\"card\",\"data\":{\"card_name\":\"Attendance Tracking\",\"col\":4}},{\"id\":\"cQ2mZpX9wL\",\"type\":\"card\",\"data\":{\"card_name\":\"Reports & Dashboard\",\"col\":4}},{\"id\":\"dR3nApY0xM\",\"type\":\"card\",\"data\":{\"card_name\":\"Import & Export\",\"col\":4}},{\"id\":\"fT8pLkNq2X\",\"type\":\"card\",\"data\":{\"card_name\":\"Payroll\",\"col\":4}},{\"id\":\"eS4oBqZ1yN\",\"type\":\"card\",\"data\":{\"card_name\":\"Settings\",\"col\":4}}]",
+ "content": "[{\"id\":\"aTdc1WkQpZ\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">IS Attendance</span>\",\"col\":12}},{\"id\":\"bR7fLmNq3H\",\"type\":\"card\",\"data\":{\"card_name\":\"Attendance Tracking\",\"col\":4}},{\"id\":\"cQ2mZpX9wL\",\"type\":\"card\",\"data\":{\"card_name\":\"Reports & Dashboard\",\"col\":4}},{\"id\":\"dR3nApY0xM\",\"type\":\"card\",\"data\":{\"card_name\":\"Import & Export\",\"col\":4}},{\"id\":\"fT8pLkNq2X\",\"type\":\"card\",\"data\":{\"card_name\":\"Payroll\",\"col\":4}},{\"id\":\"eS4oBqZ1yN\",\"type\":\"card\",\"data\":{\"card_name\":\"Settings\",\"col\":4}}]",
  "creation": "2026-09-03 09:24:57",
  "custom_blocks": [],
  "docstatus": 0,
@@ -12,7 +12,7 @@
  "idx": 1,
  "indicator_color": "green",
  "is_hidden": 0,
- "label": "Attendance",
+ "label": "IS Attendance",
  "links": [
   {
    "hidden": 0,
@@ -233,10 +233,10 @@
    "type": "Link"
   }
  ],
- "modified": "2026-09-11 12:22:17.688900",
+ "modified": "2026-09-22 09:21:27.556222",
  "modified_by": "Administrator",
  "module": "Isambane Attendance",
- "name": "Attendance",
+ "name": "IS Attendance",
  "number_cards": [],
  "owner": "Administrator",
  "public": 1,
@@ -256,10 +256,16 @@
   },
   {
    "role": "Payroll User"
+  },
+  {
+   "role": "Engineering Area Manager"
+  },
+  {
+   "role": "Production Area Manager"
   }
  ],
  "sequence_id": 1.0,
  "shortcuts": [],
- "title": "Attendance",
+ "title": "IS Attendance",
  "type": "Workspace"
 }

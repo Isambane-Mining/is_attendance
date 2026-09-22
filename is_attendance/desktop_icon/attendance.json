@@ -12,7 +12,7 @@
  "link_to": "Attendance",
  "link_type": "Workspace Sidebar",
  "logo_url": "/assets/is_attendance/images/is-logo.svg",
- "modified": "2026-09-07 07:28:35.983293",
+ "modified": "2026-09-22 09:03:35.059527",
  "modified_by": "Administrator",
  "name": "Attendance",
  "owner": "Administrator",
@@ -32,6 +32,12 @@
   },
   {
    "role": "Payroll User"
+  },
+  {
+   "role": "Engineering Area Manager"
+  },
+  {
+   "role": "Production Area Manager"
   }
  ],
  "standard": 1

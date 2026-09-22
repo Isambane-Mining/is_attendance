@@ -1,7 +1,7 @@
 {
  "actions": [],
  "autoname": "field:group_name",
- "creation": "2026-09-11 09:00:00.000000",
+ "creation": "2026-09-11 09:00:00",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -172,10 +172,11 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-12 09:00:00.000000",
+ "modified": "2026-09-22 09:04:56.676105",
  "modified_by": "Administrator",
  "module": "Isambane Attendance",
  "name": "Watch Group",
+ "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
   {
@@ -200,27 +201,48 @@
   },
   {
    "create": 1,
-   "delete": 1,
    "email": 1,
    "if_owner": 1,
    "print": 1,
    "read": 1,
+   "role": "HR User",
    "share": 1,
-   "write": 1,
-   "role": "HR User"
+   "write": 1
   },
   {
    "create": 1,
-   "delete": 1,
    "email": 1,
    "if_owner": 1,
    "print": 1,
    "read": 1,
+   "role": "Payroll User",
    "share": 1,
-   "write": 1,
-   "role": "Payroll User"
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Engineering Area Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Production Area Manager",
+   "share": 1,
+   "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": [],

@@ -1,11 +1,11 @@
 app_name = "is_attendance"
-app_title = "Isambane Attendance"
+app_title = "Attendance"
 app_publisher = "BuFf0k"
 app_description = "Attendance Management and Integration Tool"
 app_email = "buff0k@gmail.com"
 app_license = "mit"
 app_logo_url = "/assets/is_attendance/images/is-logo.svg"
-app_home = "/desk/attendance"
+app_home = "/desk/is-attendance"
 required_apps = ["frappe/hrms"]
 add_to_apps_screen = [
 	{
