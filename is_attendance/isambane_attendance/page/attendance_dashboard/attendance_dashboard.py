@@ -44,11 +44,16 @@ from io import BytesIO
 
 import frappe
 from frappe import _
-from frappe.utils import now_datetime
+from frappe.utils import add_days, add_months, flt, get_first_day, get_last_day, getdate, now_datetime
 
 from is_attendance.isambane_attendance.report.attendance_compliance_summary.attendance_compliance_summary import (
 	DAY_TYPES,
+	DEFAULT_END_TIME,
+	DEFAULT_START_TIME,
 	METRICS,
+	_classify_day,
+	_get_checkins_grouped,
+	_resolve_employees,
 	compute,
 )
 from is_attendance.permissions import responsible_branches_for_user
@@ -134,6 +139,180 @@ def get_daily_detail(filters=None, employee=None):
 
 	_summary_rows, daily_detail = compute(filters)
 	return daily_detail.get(employee, [])
+
+
+# ---------------------------------------------------------------------------
+# Overtime Distribution - a second dashboard section on the same page,
+# one column per calendar month covered by From Date/To Date. Normal vs
+# Overtime split is a flat per-employee-per-month hours threshold
+# (user-configurable via the "Normal Hours Threshold" filter, defaulting to
+# 195 - the same default already used for Sage Payroll Run.normal_hours_cap,
+# though that field is period-specific to one payroll run and not reused
+# directly here). Built on the exact same _get_checkins_grouped()/
+# _classify_day() building blocks attendance_compliance_summary.compute()
+# uses for its own single day-by-day loop - hours_worked is unaffected by
+# start_time/end_time/threshold_minutes (those only drive the Late In/Early
+# Out flags), so DEFAULT_START_TIME/DEFAULT_END_TIME/0 are passed through
+# unconditionally rather than exposing three more filters this section has
+# no use for.
+# ---------------------------------------------------------------------------
+
+DEFAULT_NORMAL_HOURS_THRESHOLD = 195.0
+
+# (band key, display label, inclusive lower bound, exclusive upper bound).
+# An employee with exactly 0 overtime that month isn't counted in any band -
+# this table is a distribution of who worked overtime and how much, not a
+# headcount audit; 0-overtime employees are already implicitly everyone
+# accounted for by (total employees resolved) minus (sum of these counts).
+OVERTIME_BANDS = [
+	("lt_10", "< 10", 0.0, 10.0),
+	("10_20", "10 - 20", 10.0, 20.0),
+	("20_30", "20 - 30", 20.0, 30.0),
+	("30_40", "30 - 40", 30.0, 40.0),
+]
+
+
+@frappe.whitelist()
+def get_overtime_distribution(filters=None):
+	if not EXPORT_ROLES & set(frappe.get_roles()):
+		frappe.throw(_("You are not permitted to view this data."), frappe.PermissionError)
+
+	filters = frappe.parse_json(filters) if isinstance(filters, str) else (filters or {})
+
+	from_date = getdate(filters.get("from_date"))
+	to_date = getdate(filters.get("to_date"))
+	if not from_date or not to_date:
+		frappe.throw(_("From Date and To Date are required."))
+	if from_date > to_date:
+		frappe.throw(_("From Date cannot be after To Date."))
+
+	normal_hours_threshold = flt(filters.get("normal_hours_threshold")) or DEFAULT_NORMAL_HOURS_THRESHOLD
+
+	months = _month_buckets(from_date, to_date)
+	employees = _resolve_employees(filters)
+	if not employees:
+		return {"months": months, "rows": []}
+
+	checkins_by_day = _get_checkins_grouped(employees, from_date, to_date)
+
+	# employee -> month key -> total hours worked that month (clipped to the
+	# overall from_date/to_date range, so a partial first/last month only
+	# counts the days actually in range).
+	monthly_hours: dict[str, dict[str, float]] = {employee: {} for employee in employees}
+	for month in months:
+		month_start = max(month["start"], from_date)
+		month_end = min(month["end"], to_date)
+		for employee in employees:
+			total = 0.0
+			day = month_start
+			while day <= month_end:
+				classification = _classify_day(
+					checkins_by_day.get((employee, day), []), DEFAULT_START_TIME, DEFAULT_END_TIME, 0
+				)
+				total += classification["hours_worked"]
+				day = add_days(day, 1)
+			monthly_hours[employee][month["key"]] = round(total, 2)
+
+	rows = _build_overtime_rows(months, employees, monthly_hours, normal_hours_threshold)
+	return {"months": months, "rows": rows}
+
+
+def _build_overtime_rows(
+	months: list[dict], employees: list[str], monthly_hours: dict[str, dict[str, float]], normal_hours_threshold: float
+) -> list[dict]:
+	total_normal: dict[str, float] = {}
+	total_overtime: dict[str, float] = {}
+	band_counts = {band_key: {} for band_key, *_ in OVERTIME_BANDS}
+	band_overtime = {band_key: {} for band_key, *_ in OVERTIME_BANDS}
+	over_40_count: dict[str, int] = {}
+	over_40_overtime: dict[str, float] = {}
+	per_capita_over_40: dict[str, float] = {}
+
+	for month in months:
+		month_key = month["key"]
+		normal_sum = overtime_sum = 0.0
+		counts = {band_key: 0 for band_key, *_ in OVERTIME_BANDS}
+		band_sums = {band_key: 0.0 for band_key, *_ in OVERTIME_BANDS}
+		gt_40_count = 0
+		gt_40_sum = 0.0
+
+		for employee in employees:
+			hours = monthly_hours[employee].get(month_key, 0.0)
+			normal = min(hours, normal_hours_threshold)
+			overtime = max(0.0, hours - normal_hours_threshold)
+			normal_sum += normal
+			overtime_sum += overtime
+
+			if overtime <= 0:
+				continue
+			if overtime >= 40:
+				gt_40_count += 1
+				gt_40_sum += overtime
+				continue
+			for band_key, _label, lo, hi in OVERTIME_BANDS:
+				if lo <= overtime < hi:
+					counts[band_key] += 1
+					band_sums[band_key] += overtime
+					break
+
+		total_normal[month_key] = round(normal_sum, 2)
+		total_overtime[month_key] = round(overtime_sum, 2)
+		for band_key, _label, _lo, _hi in OVERTIME_BANDS:
+			band_counts[band_key][month_key] = counts[band_key]
+			band_overtime[band_key][month_key] = round(band_sums[band_key], 2)
+		over_40_count[month_key] = gt_40_count
+		over_40_overtime[month_key] = round(gt_40_sum, 2)
+		per_capita_over_40[month_key] = round(gt_40_sum / gt_40_count, 3) if gt_40_count else 0.0
+
+	rows = [
+		{"label": _("Total Normal Time"), "type": "hours", "values": total_normal},
+		{"label": _("Total Overtime"), "type": "hours", "values": total_overtime},
+	]
+	for band_key, band_label, _lo, _hi in OVERTIME_BANDS:
+		rows.append(
+			{
+				"label": _("Number of Employees {0}").format(band_label),
+				"type": "count",
+				"group_start": True,
+				"values": band_counts[band_key],
+			}
+		)
+		rows.append(
+			{
+				"label": _("Total Overtime {0}").format(band_label),
+				"type": "hours",
+				"values": band_overtime[band_key],
+			}
+		)
+	rows.append(
+		{"label": _("Number of Employees > 40"), "type": "count", "group_start": True, "values": over_40_count}
+	)
+	rows.append({"label": _("Cumulative OT Hours > 40"), "type": "hours", "values": over_40_overtime})
+	rows.append({"label": _("Per Capita OT Hours > 40"), "type": "hours", "values": per_capita_over_40})
+	return rows
+
+
+def _month_buckets(from_date, to_date) -> list[dict]:
+	"""One entry per calendar month the range touches, each clipped display
+	label/key keyed by that month's own first day - e.g. a range entirely
+	within one month returns a single bucket, a range spanning a few months
+	returns one per month, matching the "single month -> one column,
+	multiple months -> one column each" requirement directly from the
+	number of buckets returned, with no separate single/multi-month code
+	path needed."""
+	buckets = []
+	current = get_first_day(from_date)
+	while current <= to_date:
+		buckets.append(
+			{
+				"key": current.strftime("%Y-%m"),
+				"label": current.strftime("%B %Y"),
+				"start": current,
+				"end": get_last_day(current),
+			}
+		)
+		current = add_months(current, 1)
+	return buckets
 
 
 TIME_FIELDS = {"in_time", "out_time"}
