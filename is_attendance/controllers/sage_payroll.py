@@ -232,11 +232,12 @@ def list_pending_pull_requests() -> list[dict]:
 	method, since the heartbeat doesn't know which Runs exist until it
 	asks. Returns one entry per Sage Payroll Run currently sitting at
 	Status "Pull Requested" (set by SagePayrollRun.request_employee_pull,
-	the "Request Employee Pull" button), naming the Sage Company Number
-	and Paypoints the heartbeat needs to query for it - so the Frappe side
-	never has to know or care which of the office's several Sage DSNs a
-	given Run's data comes from; that mapping only lives in the heartbeat's
-	own config plus this Run's own Sage Payroll Company record."""
+	the "Request Employee Pull" button), naming the Sage Company Number to
+	pull (a single query per Company, not per Paypoint - see
+	sage_employee_puller.py) and its currently-configured Paypoints, sent
+	along for the heartbeat's own logging/sanity-checking only, since the
+	real Branch split from each pulled row's own PaypointCode happens
+	server-side in ingest_employees(), not on the Windows host."""
 	_require_payroll_role()
 
 	rows = frappe.get_all(
