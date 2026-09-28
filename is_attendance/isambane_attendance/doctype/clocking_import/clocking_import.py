@@ -40,6 +40,15 @@ from is_attendance.controllers.clocking_parsers import detect_and_parse
 
 class ClockingImport(Document):
 	def validate(self):
+		# A real field mirroring the standard `owner`, not a redeclared
+		# DocField named "owner" itself (Frappe's own DocType.scrub_field_names()
+		# unconditionally rejects that fieldname - see uploaded_by's own
+		# field description) - set once, idempotent on every later save so
+		# it never drifts from who actually created this document, same
+		# as `owner` itself never changes after creation.
+		if not self.uploaded_by:
+			self.uploaded_by = self.owner or frappe.session.user
+
 		clocking_import.validate_import(self)
 
 	def on_update(self):
