@@ -192,6 +192,15 @@ is_attendance.AttendanceDashboard = class AttendanceDashboard {
 			change: () => this.run(),
 		});
 
+		this.filters.normal_hours_threshold = this.page.add_field({
+			fieldname: "normal_hours_threshold",
+			label: __("Normal Hours Threshold"),
+			fieldtype: "Float",
+			default: 195,
+			description: __("Per employee, per month - hours above this count as Overtime in the Overtime Distribution table below."),
+			change: () => this.run(),
+		});
+
 		this.page.set_primary_action(__("Refresh"), () => this.run(), "refresh");
 		this.page.add_inner_button(__("Export to Excel"), () => this.export_excel());
 	}
@@ -208,12 +217,20 @@ is_attendance.AttendanceDashboard = class AttendanceDashboard {
 					</div>
 					<div class="ad-table-wrap"></div>
 				</div>
+				<div class="ad-section">
+					<div class="ad-section-header">
+						<h4>${__("Overtime Distribution")}</h4>
+						<p class="text-muted">${__("One column per calendar month in the selected range. Normal vs Overtime is split per employee per month at the Normal Hours Threshold above (default 195).")}</p>
+					</div>
+					<div class="ad-overtime-table-wrap"></div>
+				</div>
 			</div>
 		`).appendTo(this.page.main);
 
 		this.$stats_row = this.$body.find(".ad-stats-row");
 		this.$charts_row = this.$body.find(".ad-charts-row");
 		this.$table = this.$body.find(".ad-table-wrap");
+		this.$overtime_table = this.$body.find(".ad-overtime-table-wrap");
 	}
 
 	get_filter_values() {
@@ -239,6 +256,12 @@ is_attendance.AttendanceDashboard = class AttendanceDashboard {
 				filters: filters,
 			},
 			callback: (r) => this.render(r.message),
+		});
+
+		frappe.call({
+			method: "is_attendance.isambane_attendance.page.attendance_dashboard.attendance_dashboard.get_overtime_distribution",
+			args: { filters: JSON.stringify(filters) },
+			callback: (r) => this.render_overtime_table(r.message || { months: [], rows: [] }),
 		});
 	}
 
@@ -412,6 +435,45 @@ is_attendance.AttendanceDashboard = class AttendanceDashboard {
 			const $row = $(event.currentTarget).closest("tr");
 			this.create_adjustment($row.data("employee"));
 		});
+	}
+
+	render_overtime_table(message) {
+		const months = message.months || [];
+		const rows = message.rows || [];
+
+		if (!months.length || !rows.length) {
+			this.$overtime_table.html(`<div class="ad-empty">${__("No data for the selected filters.")}</div>`);
+			return;
+		}
+
+		const format_value = (row, month_key) => {
+			const value = row.values[month_key] ?? 0;
+			return row.type === "count" ? String(value) : frappe.format(value, { fieldtype: "Float", precision: 2 });
+		};
+
+		const header = `
+			<th class="ad-ot-label-col"></th>
+			${months.map((month) => `<th>${frappe.utils.escape_html(month.label)}</th>`).join("")}
+		`;
+
+		const body = rows
+			.map((row) => {
+				const row_class = row.group_start ? "ad-ot-group-start" : "";
+				return `
+					<tr class="${row_class}">
+						<td class="ad-ot-label-col"><strong>${frappe.utils.escape_html(row.label)}</strong></td>
+						${months.map((month) => `<td>${format_value(row, month.key)}</td>`).join("")}
+					</tr>
+				`;
+			})
+			.join("");
+
+		this.$overtime_table.html(`
+			<table class="ad-table ad-ot-table">
+				<thead><tr>${header}</tr></thead>
+				<tbody>${body}</tbody>
+			</table>
+		`);
 	}
 
 	toggle_detail(employee, $summary_row) {
@@ -615,6 +677,11 @@ function ad_ensure_style() {
 
 		.ad-table-wrap { overflow-x: auto; width: 100%; max-width: 100%; min-width: 0; }
 		.ad-empty { padding: 24px 18px; color: var(--text-muted); font-size: 13px; }
+
+		.ad-overtime-table-wrap { overflow-x: auto; width: 100%; max-width: 100%; min-width: 0; }
+		.ad-ot-table td, .ad-ot-table th { text-align: right; white-space: nowrap; }
+		.ad-ot-table .ad-ot-label-col { text-align: left; white-space: normal; }
+		.ad-ot-table tr.ad-ot-group-start td { border-top: 2px solid var(--border-color, #d1d8dd); }
 
 		/* table-layout: fixed - see the Clocking Import Issues page's own
 		   CSS comment for why this matters: without it, a single long

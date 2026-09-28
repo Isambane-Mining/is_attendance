@@ -79,11 +79,11 @@
    "type": "Link"
   }
  ],
- "modified": "2026-09-22 09:19:55.159112",
+ "modified": "2026-09-22 10:20:16.384594",
  "modified_by": "Administrator",
  "module": "Isambane Attendance",
- "name": "IS Attendance",
+ "name": "Attendance",
  "owner": "Administrator",
  "standard": 1,
- "title": "IS Attendance"
+ "title": "Attendance"
 }

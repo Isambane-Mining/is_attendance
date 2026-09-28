@@ -56,12 +56,8 @@ Each cycle (`heartbeat_interval_seconds` in the config, default 60s):
 1. GETs `list_pending_pull_requests` - every Sage Payroll Run currently at
    Status "Pull Requested", with the Sage Company Number and Paypoints
    each one needs (read from that Run's own `Sage Payroll Company` record
-   on the Frappe side - Frappe is the sole source of truth for Paypoints,
-   this script's local config doesn't hold them at all, so a Paypoint
-   added or removed in Frappe takes effect on the very next poll with
-   nothing here to edit or restart). A Run whose Company currently has no
-   Paypoints configured in Frappe is skipped with a log warning, not
-   silently pulled with a stale list.
+   on the Frappe side). Paypoints here are for reference/logging only now,
+   not a query filter - see point 2.
 2. For each request whose Company Number matches a **configured and
    enabled** entry on this controller's own `Sage Remote Controller`
    record in Frappe (fetched fresh every cycle via
@@ -69,10 +65,16 @@ Each cycle (`heartbeat_interval_seconds` in the config, default 60s):
    Company's own ODBC DSN (`DSN=VIP_Company001;UID=;PWD=;` - blank
    UID/PWD, same connection string the real Excel query tooling already
    uses, confirmed by byte-searching a real Salary Sheet `.xls`'s embedded
-   query definition), runs the confirmed identity query once per
-   Paypoint, and POSTs the combined employee list to that Run via
-   `/api/method/run_doc_method` (`method: "ingest_employees"`) - the same
-   mechanism `erp_uploader.py` already uses for `queue_import()`.
+   query definition), runs **one query pulling every active employee for
+   that whole Company Number** (no per-Paypoint filtering - PaypointCode
+   comes back as a column on each row instead), and POSTs the full
+   employee list to that Run via `/api/method/run_doc_method`
+   (`method: "ingest_employees"`) - the same mechanism `erp_uploader.py`
+   already uses for `queue_import()`. Frappe's own `Sage Payroll
+   Company.paypoints` does the Branch split downstream from each row's own
+   PaypointCode (see `ingest_employees()`) - a Paypoint the Sage data
+   contains but nobody's mapped in Frappe yet still comes through, just
+   without a Branch resolved, rather than silently never being queried.
 3. A request for a Company Number this instance doesn't have
    configured/enabled is skipped with a log line, not an error - lets
    several bench instances (or a future second Windows host) share the
@@ -85,16 +87,19 @@ stamps that controller's own `Last Heartbeat` there - the Sage Remote
 Controller list view is always the current "who's connected" picture, no
 need to check a log file on the host itself.
 
-**The query, exactly as found** (see the script's own module docstring
-for the full byte-search evidence):
+**The query this script actually runs** (adapted from the real embedded
+MS Query definition found in a Salary Sheet `.xls` - see the script's own
+module docstring for the original, per-Paypoint form and the full byte-
+search evidence; this version drops that WHERE clause and selects
+PaypointCode as a column instead, to pull every Paypoint in one go):
 
 ```sql
 SELECT EMP_INFO_FIXED.Surname AS SURNAME, EMP_INFO_FIXED.EmployeeCode AS COY,
        EMP_INFO_FIXED.FullNames AS NAME, EMP_INFO_FIXED.IDNumber AS ID,
-       DESC_JOBTITLE.JobTitleLongDesc AS OCCUPATION
+       DESC_JOBTITLE.JobTitleLongDesc AS OCCUPATION, EMP_INFO_FIXED.PaypointCode AS PAYPOINT
 FROM dba.DESC_JOBTITLE DESC_JOBTITLE, dba.EMP_INFO_FIXED EMP_INFO_FIXED
 WHERE EMP_INFO_FIXED.JobTitleCode = DESC_JOBTITLE.JobTitleCode
-  AND ((EMP_INFO_FIXED.PaypointCode = ?) AND (EMP_INFO_FIXED.EmployeeStatus = 'N'))
+  AND EMP_INFO_FIXED.EmployeeStatus = 'N'
 ORDER BY EMP_INFO_FIXED.Surname, DESC_JOBTITLE.JobTitleLongDesc
 ```
 

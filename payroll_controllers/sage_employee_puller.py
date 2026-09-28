@@ -20,21 +20,28 @@ list_pending_pull_requests() is what notices and actually does the ODBC
 work. Nothing here decides on its own which Runs need pulling.
 
 Frappe's own Sage Payroll Company record is the sole source of truth for
-which Paypoints belong to a Company Number. The DSN-per-Company mapping
-used to live in this script's own local config too, but now lives on this
-controller's own Sage Remote Controller record in Frappe instead (fetched
-fresh every cycle via get_remote_controller_config, identified by which
-User this script's api_key/api_secret belong to) - the local config file
-now holds only what Frappe genuinely has no business knowing: how to reach
-this Frappe site and authenticate (base_url/api_key/api_secret), and how
-often to poll. This means a newly-enabled Company/edited DSN needs no
-redeploy or restart on the Windows host at all, and the "Connected
-controllers" summary on that doctype's own list view is always current.
+which Paypoints belong to a Company Number - but only for the downstream
+Branch split (see ingest_employees()), not for what gets queried: this
+script pulls every active employee for a Company Number in a single query,
+regardless of Paypoint, rather than querying per Paypoint and combining
+results. The DSN-per-Company mapping used to live in this script's own
+local config too, but now lives on this controller's own Sage Remote
+Controller record in Frappe instead (fetched fresh every cycle via
+get_remote_controller_config, identified by which User this script's
+api_key/api_secret belong to) - the local config file now holds only what
+Frappe genuinely has no business knowing: how to reach this Frappe site
+and authenticate (base_url/api_key/api_secret), and how often to poll.
+This means a newly-enabled Company/edited DSN needs no redeploy or restart
+on the Windows host at all, and the "Connected controllers" summary on
+that doctype's own list view is always current.
 
 The query and connection shape below were extracted directly from the real
 Salary Sheet .xls files this integration was reverse-engineered from - a
 byte search of the OLE binary turned up the exact embedded MS Query
-definition Excel itself was running:
+definition Excel itself was running (shown here as originally found, with
+its own per-Paypoint WHERE clause - this script's own SQL_QUERY below
+drops that clause and selects PaypointCode as a column instead, to pull
+every Paypoint in one go):
 
     SELECT EMP_INFO_FIXED.Surname AS 'SURNAME', EMP_INFO_FIXED.EmployeeCode AS 'COY',
            EMP_INFO_FIXED.FullNames AS 'NAME', EMP_INFO_FIXED.IDNumber AS 'ID',
@@ -89,10 +96,10 @@ HEARTBEAT_INTERVAL_SECONDS = 60  # overridable per-instance via config's own "he
 SQL_QUERY = """
 SELECT EMP_INFO_FIXED.Surname AS SURNAME, EMP_INFO_FIXED.EmployeeCode AS COY,
        EMP_INFO_FIXED.FullNames AS NAME, EMP_INFO_FIXED.IDNumber AS ID,
-       DESC_JOBTITLE.JobTitleLongDesc AS OCCUPATION
+       DESC_JOBTITLE.JobTitleLongDesc AS OCCUPATION, EMP_INFO_FIXED.PaypointCode AS PAYPOINT
 FROM dba.DESC_JOBTITLE DESC_JOBTITLE, dba.EMP_INFO_FIXED EMP_INFO_FIXED
 WHERE EMP_INFO_FIXED.JobTitleCode = DESC_JOBTITLE.JobTitleCode
-  AND ((EMP_INFO_FIXED.PaypointCode = ?) AND (EMP_INFO_FIXED.EmployeeStatus = 'N'))
+  AND EMP_INFO_FIXED.EmployeeStatus = 'N'
 ORDER BY EMP_INFO_FIXED.Surname, DESC_JOBTITLE.JobTitleLongDesc
 """
 
@@ -136,33 +143,34 @@ def find_company_config(companies: list[dict[str, Any]], sage_company_no: str) -
 # SAGE (ODBC)
 # ============================================================
 
-def pull_company_employees(dsn: str, sage_company_no: str, paypoints: list[str]) -> list[dict[str, Any]]:
-	"""Connects to this Company Number's own Sage ODBC DSN and runs the
-	confirmed identity query once per Paypoint - matches how the real Excel
-	query tooling issues one query per site, just automated and combined
-	here instead of split across separate sheets/files."""
-	if not paypoints:
-		raise RuntimeError(f"Company '{sage_company_no}' has no paypoints to query.")
-
+def pull_company_employees(dsn: str, sage_company_no: str) -> list[dict[str, Any]]:
+	"""Connects to this Company Number's own Sage ODBC DSN and pulls every
+	active employee across every Paypoint in a single query - Frappe's own
+	Sage Payroll Company.paypoints mapping does the branch split downstream
+	(see ingest_employees()) from each row's own PaypointCode, rather than
+	this script querying per Paypoint and combining the results. One query
+	per Company Number is both simpler and cheaper than the old N-per-
+	Paypoint approach, and it also means a Paypoint the Sage data actually
+	contains but nobody's mapped in Frappe yet still comes through (just
+	with no Branch resolved) instead of silently never being queried."""
 	connection_string = f"DSN={dsn};UID=;PWD=;"
 	records: list[dict[str, Any]] = []
 
 	with pyodbc.connect(connection_string) as connection:
 		cursor = connection.cursor()
-		for paypoint_code in paypoints:
-			cursor.execute(SQL_QUERY, paypoint_code)
-			for row in cursor.fetchall():
-				records.append(
-					{
-						"surname": row.SURNAME,
-						"employee_code": row.COY,
-						"full_names": row.NAME,
-						"id_number": row.ID,
-						"occupation": row.OCCUPATION,
-						"paypoint_code": paypoint_code,
-					}
-				)
-			logging.info("Paypoint %s: %d employee(s) pulled from %s.", paypoint_code, cursor.rowcount, dsn)
+		cursor.execute(SQL_QUERY)
+		for row in cursor.fetchall():
+			records.append(
+				{
+					"surname": row.SURNAME,
+					"employee_code": row.COY,
+					"full_names": row.NAME,
+					"id_number": row.ID,
+					"occupation": row.OCCUPATION,
+					"paypoint_code": row.PAYPOINT,
+				}
+			)
+		logging.info("Company %s: %d employee(s) pulled from %s.", sage_company_no, len(records), dsn)
 
 	return records
 
@@ -262,23 +270,22 @@ def run_heartbeat_cycle(config: dict[str, Any]) -> None:
 			)
 			continue
 
-		# Paypoints come from the request itself (Frappe's own Sage Payroll
-		# Company record) - not from this script's local config, which
-		# doesn't hold Paypoints at all. Frappe is the sole source of truth
-		# for that mapping; a local fallback would risk silently re-querying
-		# a Paypoint someone deliberately removed in Frappe.
-		paypoints = request.get("paypoints") or []
-		if not paypoints:
-			logging.warning(
-				"Run %s: Company %s has no Paypoints configured on its Sage Payroll Company record - "
-				"nothing to pull. Add at least one Paypoint there.",
+		# No per-Paypoint filtering here any more - one query pulls every
+		# active employee for the whole Company Number, and Frappe's own
+		# Sage Payroll Company.paypoints does the branch split downstream
+		# from each row's own PaypointCode (see ingest_employees()). A
+		# Company with no Paypoints mapped yet still gets pulled - it just
+		# won't have a Branch resolved on any row until someone adds them.
+		if not request.get("paypoints"):
+			logging.info(
+				"Run %s: Company %s has no Paypoints configured on its Sage Payroll Company record yet - "
+				"pulling anyway, but Branch won't resolve on any row until some are added.",
 				run_name,
 				sage_company_no,
 			)
-			continue
 
 		try:
-			records = pull_company_employees(company["dsn"], sage_company_no, paypoints)
+			records = pull_company_employees(company["dsn"], sage_company_no)
 			logging.info(
 				"Run %s: pulled %d employee record(s) for Company %s.", run_name, len(records), sage_company_no
 			)
