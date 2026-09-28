@@ -58,10 +58,21 @@ from is_attendance.isambane_attendance.report.attendance_compliance_summary.atte
 )
 from is_attendance.permissions import responsible_branches_for_user
 
-# Matches the "Attendance Compliance Summary" Report doctype's own roles -
-# that gate only applies when going through the query-report UI/API, not to
-# this standalone whitelisted export, so it's re-checked explicitly here.
-EXPORT_ROLES = {"System Manager", "HR Manager", "HR User", "Payroll Manager", "Payroll User"}
+# Matches the "Attendance Compliance Summary" Report doctype's own roles
+# (and the "attendance-dashboard" Page's) - that gate only applies when
+# going through the query-report UI/API or opening the page itself, not to
+# these standalone whitelisted methods, so it's re-checked explicitly here.
+# Keep in sync with both of those roles lists by hand - there's no single
+# source of truth to read this from at runtime.
+EXPORT_ROLES = {
+	"System Manager",
+	"HR Manager",
+	"HR User",
+	"Payroll Manager",
+	"Payroll User",
+	"Engineering Area Manager",
+	"Production Area Manager",
+}
 
 # Fixed column order for every per-employee daily sheet - the Report
 # sheet's formulas hardcode letters derived from this same list, so the
