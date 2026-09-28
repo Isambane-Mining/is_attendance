@@ -6,7 +6,7 @@
  "engine": "InnoDB",
  "field_order": [
   "file",
-  "owner",
+  "uploaded_by",
   "branch",
   "column_break_status",
   "status",
@@ -35,13 +35,14 @@
    "reqd": 1
   },
   {
-   "description": "Standard field, overridden here purely to surface it as a list column/filter - who attached/queued this import.",
-   "fieldname": "owner",
+   "description": "Mirrors the standard `owner` field (who created this import) - a genuinely separate field, not a redeclared DocField literally named \"owner\", because Frappe's own DocType.scrub_field_names() unconditionally rejects that fieldname on this version (no exception for relabeling a standard/meta field for list-view/filter purposes, which is what an earlier attempt at this tried and failed to do via Property Setter - in_list_view/in_standard_filter are only ever read from a real DocField, never merged in for a standard field). Set once in ClockingImport.validate(), never changes after - same semantics as owner itself.",
+   "fieldname": "uploaded_by",
    "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Uploaded By",
-   "options": "User"
+   "options": "User",
+   "read_only": 1
   },
   {
    "description": "Checkins always use the employee's own Branch (from their Employee record). This is only a fallback for employees who have no Branch set at all - after this, IS Attendance Settings' Clocking Machines mapping is tried as a last resort per checkin's own device. Leave blank to skip straight to that device mapping (or require every employee to have their own Branch, if no device mapping covers them either).",
@@ -165,10 +166,11 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-09-10 10:30:00.000000",
+ "modified": "2026-09-28 13:18:16.135843",
  "modified_by": "Administrator",
  "module": "Isambane Attendance",
  "name": "Clocking Import",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {
@@ -188,7 +190,6 @@
    "amend": 1,
    "cancel": 1,
    "create": 1,
-   "delete": 1,
    "email": 1,
    "print": 1,
    "read": 1,
@@ -201,7 +202,6 @@
    "amend": 1,
    "cancel": 1,
    "create": 1,
-   "delete": 1,
    "email": 1,
    "if_owner": 1,
    "print": 1,
@@ -224,5 +224,6 @@
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": [],
- "track_changes": 1
+ "track_changes": 1,
+ "track_seen": 1
 }
