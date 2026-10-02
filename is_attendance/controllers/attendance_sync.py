@@ -3,11 +3,13 @@
 
 from __future__ import annotations
 
+import time as _time
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from typing import Iterable, List, Optional, Tuple
 
 import frappe
+from frappe.exceptions import QueryDeadlockError
 from frappe.utils import (
 	add_days,
 	add_to_date,
@@ -16,6 +18,16 @@ from frappe.utils import (
 	get_datetime,
 	getdate,
 )
+
+# How many times to retry an Attendance upsert that lost a MariaDB deadlock
+# race against another concurrent recompute for the same employee (e.g. a
+# Leave Application range-recompute and a Checkin day-recompute both landing
+# on the same employee+date at once - frappe.enqueue's job_name here is
+# cosmetic only, not a dedup key, so these jobs really can run concurrently).
+# InnoDB has already rolled back the losing transaction by the time this
+# exception surfaces, so retrying is safe and this is the standard remedy for
+# a transient deadlock rather than a real conflict.
+UPSERT_DEADLOCK_RETRIES = 3
 
 
 # ---------------------------------------------------------------------------
@@ -314,18 +326,15 @@ def _upsert_attendance(
 	Create or update a draft Attendance record.
 
 	Submitted and cancelled records are left unchanged.
+
+	Retries on QueryDeadlockError: another recompute (Checkin-triggered or a
+	different Leave Application's range) can legitimately be upserting the
+	same employee+date at the same time, which MariaDB occasionally resolves
+	by killing one side's transaction. Re-reading `existing` fresh on each
+	attempt handles the case where the other side's commit is what we were
+	deadlocked against (e.g. it created the row we were about to create).
 	"""
 	attendance_date = getdate(attendance_date)
-
-	existing = frappe.db.get_value(
-		"Attendance",
-		{
-			"employee": employee,
-			"attendance_date": attendance_date,
-		},
-		["name", "docstatus"],
-		as_dict=True,
-	)
 
 	values = {
 		"employee": employee,
@@ -341,35 +350,55 @@ def _upsert_attendance(
 		"leave_application": leave_application,
 	}
 
-	if not existing:
-		attendance = frappe.get_doc(
-			{
-				"doctype": "Attendance",
-				**values,
-			}
-		)
-		attendance.insert(ignore_permissions=True)
-		return
+	for attempt in range(UPSERT_DEADLOCK_RETRIES + 1):
+		try:
+			existing = frappe.db.get_value(
+				"Attendance",
+				{
+					"employee": employee,
+					"attendance_date": attendance_date,
+				},
+				["name", "docstatus"],
+				as_dict=True,
+			)
 
-	# Never modify submitted or cancelled Attendance.
-	if cint(existing.docstatus) in (1, 2):
-		return
+			if not existing:
+				attendance = frappe.get_doc(
+					{
+						"doctype": "Attendance",
+						**values,
+					}
+				)
+				attendance.insert(ignore_permissions=True)
+				return
 
-	attendance = frappe.get_doc(
-		"Attendance",
-		existing.name,
-	)
+			# Never modify submitted or cancelled Attendance.
+			if cint(existing.docstatus) in (1, 2):
+				return
 
-	for fieldname, value in values.items():
-		if fieldname in (
-			"employee",
-			"attendance_date",
-		):
-			continue
+			attendance = frappe.get_doc(
+				"Attendance",
+				existing.name,
+			)
 
-		attendance.set(fieldname, value)
+			for fieldname, value in values.items():
+				if fieldname in (
+					"employee",
+					"attendance_date",
+				):
+					continue
 
-	attendance.save(ignore_permissions=True)
+				attendance.set(fieldname, value)
+
+			attendance.save(ignore_permissions=True)
+			return
+		except QueryDeadlockError:
+			frappe.db.rollback()
+
+			if attempt == UPSERT_DEADLOCK_RETRIES:
+				raise
+
+			_time.sleep(0.5 * (attempt + 1))
 
 
 # ---------------------------------------------------------------------------
