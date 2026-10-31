@@ -58,7 +58,7 @@ from is_attendance.controllers.clocking_import import (
 	assign_override_code,
 )
 
-PAGE_ROLES = {"System Manager", "HR Manager", "IR Manager"}
+PAGE_ROLES = {"System Manager", "HR Manager"}
 
 # Every real Clocking Import status, in the order the pipeline actually
 # moves through them - used to give the status donut chart both a
