@@ -4,7 +4,7 @@
  "docstatus": 0,
  "doctype": "Page",
  "idx": 0,
- "modified": "2026-09-15 15:15:22.116273",
+ "modified": "2026-11-10 18:50:31.822999",
  "modified_by": "Administrator",
  "module": "Isambane Attendance",
  "name": "attendance-dashboard",
@@ -19,6 +19,9 @@
   },
   {
    "role": "HR User"
+  },
+  {
+   "role": "IR User"
   },
   {
    "role": "Payroll Manager"
