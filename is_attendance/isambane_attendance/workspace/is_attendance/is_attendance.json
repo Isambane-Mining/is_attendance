@@ -1,7 +1,6 @@
 {
- "app": "is_attendance",
  "charts": [],
- "content": "[{\"id\":\"aTdc1WkQpZ\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">IS Attendance</span>\",\"col\":12}},{\"id\":\"bR7fLmNq3H\",\"type\":\"card\",\"data\":{\"card_name\":\"Attendance Tracking\",\"col\":4}},{\"id\":\"cQ2mZpX9wL\",\"type\":\"card\",\"data\":{\"card_name\":\"Reports & Dashboard\",\"col\":4}},{\"id\":\"dR3nApY0xM\",\"type\":\"card\",\"data\":{\"card_name\":\"Import & Export\",\"col\":4}},{\"id\":\"fT8pLkNq2X\",\"type\":\"card\",\"data\":{\"card_name\":\"Payroll\",\"col\":4}},{\"id\":\"eS4oBqZ1yN\",\"type\":\"card\",\"data\":{\"card_name\":\"Settings\",\"col\":4}}]",
+ "content": "[{\"id\": \"aTdc1WkQpZ\", \"type\": \"header\", \"data\": {\"text\": \"\\u003cspan class=\\\"h4\\\"\\u003eIS Attendance\\u003c/span\\u003e\", \"col\": 12}}, {\"id\": \"bR7fLmNq3H\", \"type\": \"card\", \"data\": {\"card_name\": \"Attendance Tracking\", \"col\": 4}}, {\"id\": \"cQ2mZpX9wL\", \"type\": \"card\", \"data\": {\"card_name\": \"Reports & Dashboard\", \"col\": 4}}, {\"id\": \"dR3nApY0xM\", \"type\": \"card\", \"data\": {\"card_name\": \"Import & Export\", \"col\": 4}}, {\"id\": \"fT8pLkNq2X\", \"type\": \"card\", \"data\": {\"card_name\": \"Payroll\", \"col\": 4}}, {\"id\": \"eS4oBqZ1yN\", \"type\": \"card\", \"data\": {\"card_name\": \"Settings\", \"col\": 4}}]",
  "creation": "2026-09-03 09:24:57",
  "custom_blocks": [],
  "docstatus": 0,
@@ -233,7 +232,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-09-22 09:21:27.556222",
+ "modified": "2026-11-10 18:53:07.718976",
  "modified_by": "Administrator",
  "module": "Isambane Attendance",
  "name": "IS Attendance",
@@ -262,10 +261,14 @@
   },
   {
    "role": "Production Area Manager"
+  },
+  {
+   "role": "IR User"
   }
  ],
  "sequence_id": 1.0,
  "shortcuts": [],
+ "standard": 1,
  "title": "IS Attendance",
  "type": "Workspace"
 }
