@@ -1,6 +1,7 @@
 # Copyright (c) 2026, BuFf0k and contributors
 # Read-only SimplePay catalogue importer. All writes are local to Frappe.
 
+
 import frappe
 from frappe import _
 from frappe.utils import now_datetime
@@ -173,7 +174,6 @@ def _automap_employees(settings, records, client_company):
             candidate_keys.add((company, number))
     frappe_candidates = {}
     if candidate_keys:
-        # Avoid per-employee DB calls; fetch only potentially matching Employee names.
         names = sorted({number for _, number in candidate_keys})
         for row in frappe.get_all("Employee", filters={"name": ["in", names], "status": "Active"}, fields=["name", "company"]):
             frappe_candidates.setdefault((row.company, row.name), []).append(row.name)
@@ -212,41 +212,62 @@ def _apply(clients, leave, remuneration, employees):
     items = _unique_rows(settings.remuneration_mappings or [], lambda r: (_str(r.get("simplepay_client_id")), _str(r.simplepay_calculation)), "remuneration")
     employee_rows = _unique_rows(settings.employee_map or [], lambda r: (_str(r.simplepay_employee),), "employee")
 
-    # The importer must NEVER assume the bench's default Company.
-    # Only a deliberate choice already present in Company Mapping is trusted.
     for cid, label in clients.items():
         row = companies.get((cid,))
         if not row:
-            row = settings.append("companies", {"simplepay_client_id": cid, "enabled": 0})
-            row.company = None  # Explicitly clear Frappe Link defaults on newly appended rows.
+            # IMPORTANT: pass explicit empty Link values *during* construction.
+            # Omitting company allows Frappe's default Company to be injected.
+            row = settings.append("companies", {
+                "simplepay_client_id": cid,
+                "simplepay_client_name": label,
+                "company": "",
+                "enabled": 0,
+            })
             companies[(cid,)] = row
             changed = True
             stats["clients_added"] += 1
         changed |= _set_if_changed(row, "simplepay_client_name", label)
-    client_company = {cid: (row.company or None) for (cid,), row in companies.items()}
+
+    # Company mapping is controlled by the user. An unmapped client stays blank.
+    client_company = {cid: _str(row.company) for (cid,), row in companies.items()}
+
     for (cid, tid), label in leave.items():
         row = types.get((cid, tid))
         if not row:
-            row = settings.append("leave_types", {"simplepay_client_id": cid, "simplepay_type_id": tid, "enabled": 1})
-            row.leave_type = None
+            row = settings.append("leave_types", {
+                "simplepay_client_id": cid,
+                "simplepay_type_id": tid,
+                "simplepay_type_name": label,
+                "company": "",
+                "leave_type": "",
+                "enabled": 1,
+            })
             types[(cid, tid)] = row
             changed = True
             stats["leave_types_added"] += 1
         changed |= _set_if_changed(row, "simplepay_type_name", label)
-        if _set_if_changed(row, "company", client_company.get(cid)):
+        if _set_if_changed(row, "company", client_company.get(cid, "")):
             stats["company_fields_corrected"] += 1
             changed = True
+
     for (cid, ident), item in remuneration.items():
         row = items.get((cid, ident))
         if not row:
-            row = settings.append("remuneration_mappings", {"simplepay_client_id": cid, "simplepay_calculation": ident, "enabled": 1})
-            row.salary_component = None
+            row = settings.append("remuneration_mappings", {
+                "simplepay_client_id": cid,
+                "simplepay_calculation": ident,
+                "simplepay_item_label": item["label"],
+                "simplepay_item_type": item["type"],
+                "company": "",
+                "salary_component": "",
+                "enabled": 1,
+            })
             items[(cid, ident)] = row
             changed = True
             stats["calculations_added"] += 1
         changed |= _set_if_changed(row, "simplepay_item_label", item["label"])
         changed |= _set_if_changed(row, "simplepay_item_type", item["type"])
-        if _set_if_changed(row, "company", client_company.get(cid)):
+        if _set_if_changed(row, "company", client_company.get(cid, "")):
             stats["company_fields_corrected"] += 1
             changed = True
 
@@ -259,7 +280,7 @@ def _apply(clients, leave, remuneration, employees):
     at = now_datetime()
     for employee_id, rec in employees.items():
         name = f"SP-{employee_id}"
-        doc_values = dict(rec, company=client_company.get(rec["simplepay_client_id"]), is_active=1, last_seen=at)
+        doc_values = dict(rec, company=client_company.get(rec["simplepay_client_id"], ""), is_active=1, last_seen=at)
         if frappe.db.exists(DIRECTORY, name):
             frappe.db.set_value(DIRECTORY, name, doc_values, update_modified=True)
             stats["employees_updated"] += 1
@@ -268,26 +289,28 @@ def _apply(clients, leave, remuneration, employees):
             stats["employees_created"] += 1
         row = employee_rows.get((name,))
         if not row:
-            row = settings.append("employee_map", {"simplepay_employee": name})
-            row.employee = None
+            row = settings.append("employee_map", {
+                "simplepay_employee": name,
+                "employee": "",
+                "employee_number": rec["employee_number"],
+                "first_name": rec["first_name"],
+                "last_name": rec["last_name"],
+            })
             employee_rows[(name,)] = row
             changed = True
             stats["employee_rows_added"] += 1
-        # All user-facing fields are snapshots of the source record, not mapping guesses.
         changed |= _set_if_changed(row, "employee_number", rec["employee_number"])
         changed |= _set_if_changed(row, "first_name", rec["first_name"])
         changed |= _set_if_changed(row, "last_name", rec["last_name"])
 
-    # Always reconcile imported Company fields, including clearing previously
-    # wrong defaults. Also let Settings.validate propagate to historical child rows.
     for table in ("leave_types", "remuneration_mappings"):
         for row in settings.get(table) or []:
             cid = _str(row.get("simplepay_client_id"))
-            if _set_if_changed(row, "company", client_company.get(cid)):
+            if _set_if_changed(row, "company", client_company.get(cid, "")):
                 changed = True
                 stats["company_fields_corrected"] += 1
 
-    matching_companies = {cid: (row.company or None) if row.enabled else None
+    matching_companies = {cid: _str(row.company) if row.enabled else ""
                           for (cid,), row in companies.items()}
     stats["auto_mapped"] = _automap_employees(settings, employees, matching_companies)
     changed |= bool(stats["auto_mapped"])
