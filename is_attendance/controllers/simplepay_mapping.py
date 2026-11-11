@@ -306,6 +306,84 @@ def sync_all_mappings():
         return _apply(*staged)
 
 
+
+def _automap_employees(settings):
+    """
+    Match SimplePay Payroll Number to Frappe Employee.name.
+
+    Never overwrite existing links.
+    Never match across companies.
+    """
+    company_map = {
+        str(row.simplepay_client_id): row.company
+        for row in settings.companies or []
+        if row.company
+    }
+
+    assigned = {
+        row.employee
+        for row in settings.employee_map or []
+        if row.employee
+    }
+
+    matched = 0
+
+    for row in settings.employee_map or []:
+        if row.employee or not row.simplepay_employee:
+            continue
+
+        sp = frappe.db.get_value(
+            "SimplePay Employee",
+            row.simplepay_employee,
+            [
+                "simplepay_client_id",
+                "employee_number",
+                "is_active",
+            ],
+            as_dict=True,
+        )
+
+        if not sp or not sp.is_active:
+            continue
+
+        payroll_number = str(
+            sp.employee_number or ""
+        ).strip()
+
+        company = company_map.get(
+            str(sp.simplepay_client_id)
+        )
+
+        if not payroll_number or not company:
+            continue
+
+        # Exact identifier comparison.
+        # Do not strip leading zeroes or guess.
+        candidates = frappe.get_all(
+            "Employee",
+            filters={
+                "name": payroll_number,
+                "company": company,
+                "status": "Active",
+            },
+            pluck="name",
+        )
+
+        if len(candidates) != 1:
+            continue
+
+        employee = candidates[0]
+
+        if employee in assigned:
+            continue
+
+        row.employee = employee
+        assigned.add(employee)
+        matched += 1
+
+    return matched
+
+
 @frappe.whitelist()
 def refresh_all_mappings():
     if not ({'System Manager', 'HR Manager'} & set(frappe.get_roles())):

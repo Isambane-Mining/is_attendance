@@ -8,6 +8,9 @@
  "engine": "InnoDB",
  "field_order": [
   "employee",
+  "employee_number",
+  "first_name",
+  "last_name",
   "simplepay_employee"
  ],
  "fields": [
@@ -15,6 +18,7 @@
    "fieldname": "employee",
    "fieldtype": "Link",
    "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Employee",
    "options": "Employee",
    "unique": 1
@@ -23,17 +27,42 @@
    "fieldname": "simplepay_employee",
    "fieldtype": "Link",
    "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "SimplePay Employee ID",
    "options": "SimplePay Employee",
    "reqd": 1,
    "unique": 1
+  },
+  {
+   "fieldname": "employee_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "SimplePay Payroll Number",
+   "read_only": 1
+  },
+  {
+   "fieldname": "first_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "SimplePay First Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "SimplePay Last Name",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-11-11 19:46:18.337261",
+ "modified": "2026-11-11 20:44:17.138481",
  "modified_by": "Administrator",
  "module": "Isambane Attendance",
  "name": "SimplePay Employee Map",

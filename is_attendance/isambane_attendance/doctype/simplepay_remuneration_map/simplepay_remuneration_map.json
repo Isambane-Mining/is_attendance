@@ -21,19 +21,24 @@
    "fieldname": "company",
    "fieldtype": "Link",
    "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Company",
-   "options": "Company"
+   "options": "Company",
+   "read_only": 1
   },
   {
    "fieldname": "salary_component",
    "fieldtype": "Link",
    "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Salary Component",
    "options": "Salary Component"
   },
   {
    "fieldname": "simplepay_calculation",
    "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "SimplePay Calculation",
    "reqd": 1
   },
@@ -41,6 +46,8 @@
    "default": "SimplePay > Frappe",
    "fieldname": "direction",
    "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Sync Direction",
    "options": "SimplePay > Frappe\nFrappe > SimplePay"
   },
@@ -53,17 +60,23 @@
   {
    "fieldname": "simplepay_client_id",
    "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "SimplePay Client ID"
   },
   {
    "fieldname": "simplepay_item_label",
    "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "SimplePay Item Label",
    "read_only": 1
   },
   {
    "fieldname": "simplepay_item_type",
    "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "SimplePay Item Type",
    "read_only": 1
   }
@@ -72,7 +85,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-11-11 20:07:36.851327",
+ "modified": "2026-11-11 20:30:58.034352",
  "modified_by": "Administrator",
  "module": "Isambane Attendance",
  "name": "SimplePay Remuneration Map",
