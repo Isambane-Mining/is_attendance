@@ -14,7 +14,7 @@ from frappe.utils import flt, getdate, now_datetime
 SETTINGS = 'SimplePay Settings'
 SYNC = 'SimplePay Leave Sync'
 DIRECTORY = 'SimplePay Employee'
-MAP = 'SimplePay Employee Map'  # Child table in SimplePay Settings, not a standalone DocType.
+MAP = 'SimplePay Employee Map'
 
 
 class SimplePayError(Exception):
@@ -324,8 +324,6 @@ def reconcile(application_name):
                              for x in planned]}
 
 
-# Employee directory and Settings child-table mapping --------------------------------
-
 def _directory_records(payload, client_id, company):
     if not isinstance(payload, list):
         raise SimplePayError(f'Unexpected employee API response for {company}')
@@ -380,8 +378,6 @@ def _refresh_directory():
         staged[(company, client_id)] = _directory_records(
             _request('GET', f'clients/{int(client_id)}/employees'), client_id, company)
 
-    # Existing maps are preserved, including unmapped and employees no longer returned by API.
-    # Validate the entire import before changing the directory or Settings.
     seen_ids = set()
     for records in staged.values():
         for external_id in records:
@@ -408,7 +404,6 @@ def _refresh_directory():
             else:
                 frappe.get_doc(dict(doctype=DIRECTORY, is_active=1, last_seen=at, **values)).insert(ignore_permissions=True)
                 created += 1
-        # Only mark missing IDs inactive after a valid, nonempty fetch from that client.
         names = {f'SP-{x}' for x in records}
         for row in frappe.get_all(DIRECTORY, filters={'company': company,
                 'simplepay_client_id': client_id, 'is_active': 1}, fields=['name']):
@@ -416,7 +411,6 @@ def _refresh_directory():
                 frappe.db.set_value(DIRECTORY, row.name, 'is_active', 0, update_modified=True)
                 deactivated += 1
 
-    # Re-read just before saving to retain current manually selected employee links.
     settings = _settings()
     rows = settings.get('employee_map') or []
     by_directory = {}
@@ -477,3 +471,30 @@ def refresh_employee_directory():
                    queue='long', enqueue_after_commit=True,
                    job_name='simplepay-employee-refresh')
     return {'queued': True}
+
+
+@frappe.whitelist()
+def list_clients():
+    """Read-only retrieval of available SimplePay companies."""
+    _require_payroll_access()
+
+    data = _request("GET", "clients/")
+
+    if not isinstance(data, list):
+        raise SimplePayError("Unexpected SimplePay clients response")
+
+    clients = []
+
+    for item in data:
+        client = item.get("client", {}) if isinstance(item, dict) else {}
+        client_id = client.get("id")
+
+        if not str(client_id or "").isdigit():
+            raise SimplePayError("Invalid SimplePay client ID")
+
+        clients.append({
+            "id": str(client_id),
+            "name": client.get("name") or str(client_id),
+        })
+
+    return sorted(clients, key=lambda x: x["name"].lower())

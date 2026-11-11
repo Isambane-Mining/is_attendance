@@ -10,6 +10,8 @@
   "company",
   "leave_type",
   "simplepay_type_id",
+  "simplepay_client_id",
+  "simplepay_type_name",
   "enabled"
  ],
  "fields": [
@@ -18,16 +20,14 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Company",
-   "options": "Company",
-   "reqd": 1
+   "options": "Company"
   },
   {
    "fieldname": "leave_type",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Leave Type",
-   "options": "Leave Type",
-   "reqd": 1
+   "options": "Leave Type"
   },
   {
    "fieldname": "simplepay_type_id",
@@ -40,13 +40,24 @@
    "fieldname": "enabled",
    "fieldtype": "Check",
    "label": "Enabled"
+  },
+  {
+   "fieldname": "simplepay_client_id",
+   "fieldtype": "Data",
+   "label": "SimplePay Client ID"
+  },
+  {
+   "fieldname": "simplepay_type_name",
+   "fieldtype": "Data",
+   "label": "SimplePay Type Name",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-11-11 10:53:10.723189",
+ "modified": "2026-11-11 20:06:19.053867",
  "modified_by": "Administrator",
  "module": "Isambane Attendance",
  "name": "SimplePay Leave Type Map",
