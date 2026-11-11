@@ -52,27 +52,84 @@ def _leave_payload(payload, client):
     return result
 
 
+
+
 def _items_payload(payload, client):
-    if not isinstance(payload, list) or not payload or not all(isinstance(x, dict) for x in payload):
-        raise simplepay.SimplePayError(f'Unexpected items_and_outputs response for client {client}')
+    if payload is None or payload == []:
+        return {}
+
+    if isinstance(payload, dict):
+        sections = [payload]
+
+    elif isinstance(payload, list):
+        sections = payload
+
+    else:
+        raise simplepay.SimplePayError(
+            f'Unexpected remuneration response for '
+            f'client {client}: {type(payload).__name__}'
+        )
+
     result = {}
-    for section in payload:
-        for kind, source in [('System', 'system_items'), ('Custom', 'custom_items')]:
-            entries = section.get(source, [])
+
+    for section in sections:
+        if not isinstance(section, dict):
+            raise simplepay.SimplePayError(
+                f'Invalid remuneration section '
+                f'for client {client}'
+            )
+
+        for kind, source in (
+            ('System', 'system_items'),
+            ('Custom', 'custom_items'),
+        ):
+            entries = section.get(source)
+
+            if entries is None:
+                entries = []
+
             if not isinstance(entries, list):
-                raise simplepay.SimplePayError(f'Invalid {source} for client {client}')
+                raise simplepay.SimplePayError(
+                    f'Invalid {source} structure '
+                    f'for client {client}'
+                )
+
             for item in entries:
                 if not isinstance(item, dict):
-                    raise simplepay.SimplePayError(f'Invalid {source} entry for client {client}')
-                identity = item.get('name') if kind == 'System' else item.get('id')
+                    raise simplepay.SimplePayError(
+                        f'Invalid {source} entry '
+                        f'for client {client}'
+                    )
+
+                identity = (
+                    item.get('name')
+                    if kind == 'System'
+                    else item.get('id')
+                )
+
                 if identity is None or str(identity) == '':
-                    raise simplepay.SimplePayError(f'{source} item missing identifier for client {client}')
+                    raise simplepay.SimplePayError(
+                        f'Missing identifier in {source} '
+                        f'for client {client}'
+                    )
+
                 ident = str(identity)
-                key = (client, ident)
-                label = str(item.get('label') or ident)[:140]
+                key = (str(client), ident)
+
                 if key in result:
-                    raise simplepay.SimplePayError(f'Duplicate calculation {ident} for client {client}')
-                result[key] = {'label': label, 'type': str(item.get('item_type') or kind)[:140]}
+                    raise simplepay.SimplePayError(
+                        f'Duplicate calculation {ident} '
+                        f'for client {client}'
+                    )
+
+                result[key] = {
+                    'label': str(
+                        item.get('label') or ident
+                    )[:140],
+                    'type': str(
+                        item.get('item_type') or kind
+                    )[:140],
+                }
     return result
 
 

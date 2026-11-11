@@ -47,7 +47,6 @@ scheduler_events = {
 	"daily": [
 		"is_attendance.controllers.attendance_sync.enqueue_daily_sync",
 		"is_attendance.controllers.watch_group_digest.send_daily_watch_group_digests",
-		"is_attendance.controllers.simplepay.sync_employee_directory",
 		"is_attendance.controllers.simplepay_mapping.sync_all_mappings",
 	],
 	"weekly": [
