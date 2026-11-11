@@ -1,6 +1,5 @@
 # Copyright (c) 2026, BuFf0k and contributors
-# SimplePay integration. Frappe Employee records are not modified.
-
+# Read-only SimplePay catalogue importer. All writes are local to Frappe.
 
 import frappe
 from frappe import _
@@ -8,397 +7,327 @@ from frappe.utils import now_datetime
 
 from is_attendance.controllers import simplepay
 
-SETTINGS = 'SimplePay Settings'
-DIRECTORY = 'SimplePay Employee'
-LOCK_KEY = 'simplepay-settings-catalogue-refresh'
+SETTINGS = "SimplePay Settings"
+DIRECTORY = "SimplePay Employee"
+LOCK_KEY = "simplepay-settings-catalogue-refresh"
+
+
+def _str(value):
+    return str(value).strip() if value is not None else ""
 
 
 def _numeric(value):
-    value = str(value or '')
+    value = _str(value)
     if not value.isdigit():
-        raise simplepay.SimplePayError(f'Expected numeric SimplePay identifier, got {value!r}')
+        raise simplepay.SimplePayError(f"Expected numeric SimplePay identifier, got {value!r}")
     return value
 
 
 def _sort_num(value):
-    s = str(value or '')
-    return (0, int(s)) if s.isdigit() else (1, s)
+    value = _str(value)
+    return (0, int(value), value) if value.isdigit() else (1, value)
 
 
-def _client_payload(payload):
-    if not isinstance(payload, list):
-        raise simplepay.SimplePayError('Unexpected SimplePay clients response')
+def _clients(payload):
+    if not isinstance(payload, list) or not payload:
+        raise simplepay.SimplePayError("Unexpected or empty SimplePay clients response")
     result = {}
     for wrapper in payload:
-        obj = wrapper.get('client') if isinstance(wrapper, dict) else None
-        if not isinstance(obj, dict):
-            raise simplepay.SimplePayError('Unexpected SimplePay client entry')
-        cid = _numeric(obj.get('id'))
-        if cid in result:
-            raise simplepay.SimplePayError(f'Duplicate SimplePay client {cid}')
-        result[cid] = str(obj.get('name') or cid)[:140]
-    if not result:
-        raise simplepay.SimplePayError('No clients returned; refusing empty catalogue')
+        raw = wrapper.get("client") if isinstance(wrapper, dict) else None
+        if not isinstance(raw, dict):
+            raise simplepay.SimplePayError("Invalid SimplePay client record")
+        client_id = _numeric(raw.get("id"))
+        if client_id in result:
+            raise simplepay.SimplePayError(f"Duplicate SimplePay client ID {client_id}")
+        result[client_id] = _str(raw.get("name") or client_id)[:140]
     return result
 
 
-def _leave_payload(payload, client):
+def _leave_types(payload, client_id):
     if not isinstance(payload, dict):
-        raise simplepay.SimplePayError(f'Unexpected leave types response for client {client}')
-    result = {}
-    for key, label in payload.items():
-        tid = _numeric(key)
-        result[(client, tid)] = str(label or tid)[:140]
-    return result
+        raise simplepay.SimplePayError(f"Unexpected leave types response for client {client_id}")
+    return {(client_id, _numeric(k)): _str(v or k)[:140] for k, v in payload.items()}
 
 
-
-
-def _items_payload(payload, client):
+def _remuneration(payload, client_id):
+    # Actual observed SimplePay response: {system_items: [], custom_items: [], accounts: []}
     if payload is None or payload == []:
         return {}
-
-    if isinstance(payload, dict):
-        sections = [payload]
-
-    elif isinstance(payload, list):
-        sections = payload
-
-    else:
-        raise simplepay.SimplePayError(
-            f'Unexpected remuneration response for '
-            f'client {client}: {type(payload).__name__}'
-        )
-
+    sections = [payload] if isinstance(payload, dict) else payload
+    if not isinstance(sections, list):
+        raise simplepay.SimplePayError(f"Unexpected items_and_outputs response for client {client_id}")
     result = {}
-
     for section in sections:
         if not isinstance(section, dict):
-            raise simplepay.SimplePayError(
-                f'Invalid remuneration section '
-                f'for client {client}'
-            )
-
-        for kind, source in (
-            ('System', 'system_items'),
-            ('Custom', 'custom_items'),
-        ):
-            entries = section.get(source)
-
-            if entries is None:
-                entries = []
-
-            if not isinstance(entries, list):
-                raise simplepay.SimplePayError(
-                    f'Invalid {source} structure '
-                    f'for client {client}'
-                )
-
-            for item in entries:
+            raise simplepay.SimplePayError(f"Invalid remuneration catalogue section for client {client_id}")
+        for kind, key in (("System", "system_items"), ("Custom", "custom_items")):
+            records = section.get(key)
+            if records is None:
+                records = []
+            if not isinstance(records, list):
+                raise simplepay.SimplePayError(f"Unexpected {key} for client {client_id}")
+            for item in records:
                 if not isinstance(item, dict):
-                    raise simplepay.SimplePayError(
-                        f'Invalid {source} entry '
-                        f'for client {client}'
-                    )
-
-                identity = (
-                    item.get('name')
-                    if kind == 'System'
-                    else item.get('id')
-                )
-
-                if identity is None or str(identity) == '':
-                    raise simplepay.SimplePayError(
-                        f'Missing identifier in {source} '
-                        f'for client {client}'
-                    )
-
-                ident = str(identity)
-                key = (str(client), ident)
-
-                if key in result:
-                    raise simplepay.SimplePayError(
-                        f'Duplicate calculation {ident} '
-                        f'for client {client}'
-                    )
-
-                result[key] = {
-                    'label': str(
-                        item.get('label') or ident
-                    )[:140],
-                    'type': str(
-                        item.get('item_type') or kind
-                    )[:140],
+                    raise simplepay.SimplePayError(f"Invalid {key} entry for client {client_id}")
+                identifier = _str(item.get("name") if kind == "System" else item.get("id"))
+                if not identifier:
+                    raise simplepay.SimplePayError(f"Missing {key} identifier for client {client_id}")
+                compound = (client_id, identifier)
+                if compound in result:
+                    raise simplepay.SimplePayError(f"Duplicate remuneration item {compound}")
+                result[compound] = {
+                    "label": _str(item.get("label") or identifier)[:140],
+                    "type": _str(item.get("item_type") or kind)[:140],
                 }
     return result
 
 
-def _employee_payload(payload, client):
+def _employees(payload, client_id):
     if not isinstance(payload, list):
-        raise simplepay.SimplePayError(f'Unexpected employee list for client {client}')
+        raise simplepay.SimplePayError(f"Unexpected employee listing for client {client_id}")
     result = {}
     for wrapper in payload:
-        obj = wrapper.get('employee') if isinstance(wrapper, dict) else None
-        if not isinstance(obj, dict):
-            raise simplepay.SimplePayError(f'Invalid employee record for client {client}')
-        eid = _numeric(obj.get('id'))
-        if eid in result:
-            raise simplepay.SimplePayError(f'Duplicate employee {eid} for client {client}')
-        result[eid] = {
-            'record_key': f'SP-{eid}',
-            'simplepay_employee_id': eid,
-            'simplepay_client_id': client,
-            'employee_number': str(obj.get('number') or '')[:140],
-            'first_name': str(obj.get('first_name') or '')[:140],
-            'last_name': str(obj.get('last_name') or '')[:140],
+        raw = wrapper.get("employee") if isinstance(wrapper, dict) else None
+        if not isinstance(raw, dict):
+            raise simplepay.SimplePayError(f"Invalid employee entry for client {client_id}")
+        employee_id = _numeric(raw.get("id"))
+        if employee_id in result:
+            raise simplepay.SimplePayError(f"Duplicate employee {employee_id} for client {client_id}")
+        result[employee_id] = {
+            "record_key": f"SP-{employee_id}",
+            "simplepay_client_id": client_id,
+            "simplepay_employee_id": employee_id,
+            "employee_number": _str(raw.get("number"))[:140],
+            "first_name": _str(raw.get("first_name"))[:140],
+            "last_name": _str(raw.get("last_name"))[:140],
         }
     return result
 
 
 def _stage():
-    clients = _client_payload(simplepay._request('GET', 'clients/'))
+    clients = _clients(simplepay._request("GET", "clients/"))
     leave, remuneration, employees = {}, {}, {}
-    for cid in clients:
-        leave.update(_leave_payload(simplepay._request('GET', f'clients/{int(cid)}/leave_types'), cid))
-        remuneration.update(_items_payload(simplepay._request('GET', f'clients/{int(cid)}/items_and_outputs'), cid))
-        for eid, record in _employee_payload(simplepay._request('GET', f'clients/{int(cid)}/employees'), cid).items():
-            if eid in employees:
-                raise simplepay.SimplePayError(f'Employee ID {eid} appears in multiple clients')
-            employees[eid] = record
+    for client_id in clients:
+        leave.update(_leave_types(simplepay._request("GET", f"clients/{int(client_id)}/leave_types"), client_id))
+        remuneration.update(_remuneration(simplepay._request("GET", f"clients/{int(client_id)}/items_and_outputs"), client_id))
+        for employee_id, record in _employees(simplepay._request("GET", f"clients/{int(client_id)}/employees"), client_id).items():
+            if employee_id in employees:
+                raise simplepay.SimplePayError(f"SimplePay Employee ID {employee_id} appears in multiple clients")
+            employees[employee_id] = record
     return clients, leave, remuneration, employees
 
 
-def _unique_rows(rows, key_fn, name):
-    mapping = {}
+def _unique_rows(rows, key_fn, table):
+    indexed = {}
     for row in rows:
         key = key_fn(row)
         if not all(key):
             continue
-        if key in mapping:
-            raise simplepay.SimplePayError(f'Duplicate {name} mapping key {key}; correct Settings first')
-        mapping[key] = row
-    return mapping
+        if key in indexed:
+            raise simplepay.SimplePayError(f"Duplicate {table} external identity {key}")
+        indexed[key] = row
+    return indexed
 
 
-def _reorder(settings, fieldname, key_fn):
-    rows = list(settings.get(fieldname) or [])
-    ordered = sorted(rows, key=key_fn)
-    changed = [x.name for x in rows] != [x.name for x in ordered]
+def _set_if_changed(row, fieldname, value):
+    if row.get(fieldname) != value:
+        row.set(fieldname, value)
+        return True
+    return False
+
+
+def _sort_rows(settings, table, key):
+    rows = list(settings.get(table) or [])
+    ordered = sorted(rows, key=key)
+    changed = [r.name for r in rows] != [r.name for r in ordered]
     if changed:
-        settings.set(fieldname, [])
-        settings.set(fieldname, ordered)
-    for idx, row in enumerate(ordered, 1):
-        if row.idx != idx:
-            row.idx = idx
+        # Keep original child-document objects and names; never delete/recreate mappings.
+        settings.set(table, ordered)
+    for i, row in enumerate(ordered, 1):
+        if row.idx != i:
+            row.idx = i
             changed = True
     return changed
+
+
+def _automap_employees(settings, records, client_company):
+    """Exact SimplePay Payroll Number -> Frappe Employee.name, company-scoped.
+
+    No name-based guesses, no leading-zero coercion, no changes to manual selections.
+    Ambiguous source payroll numbers are left unmatched.
+    """
+    assigned = {row.employee for row in settings.employee_map or [] if row.employee}
+    source_counts = {}
+    for rec in records.values():
+        company = client_company.get(rec["simplepay_client_id"])
+        number = rec["employee_number"]
+        if company and number:
+            key = (company, number)
+            source_counts[key] = source_counts.get(key, 0) + 1
+
+    candidate_keys = set()
+    for rec in records.values():
+        company = client_company.get(rec["simplepay_client_id"])
+        number = rec["employee_number"]
+        if company and number and source_counts[(company, number)] == 1:
+            candidate_keys.add((company, number))
+    frappe_candidates = {}
+    if candidate_keys:
+        # Avoid per-employee DB calls; fetch only potentially matching Employee names.
+        names = sorted({number for _, number in candidate_keys})
+        for row in frappe.get_all("Employee", filters={"name": ["in", names], "status": "Active"}, fields=["name", "company"]):
+            frappe_candidates.setdefault((row.company, row.name), []).append(row.name)
+
+    matched = 0
+    for row in settings.employee_map or []:
+        if row.employee or not row.simplepay_employee:
+            continue
+        external_id = _str(row.simplepay_employee)
+        if not external_id.startswith("SP-"):
+            continue
+        rec = records.get(external_id[3:])
+        if not rec:
+            continue
+        company = client_company.get(rec["simplepay_client_id"])
+        number = rec["employee_number"]
+        if not company or not number or source_counts.get((company, number)) != 1:
+            continue
+        choices = frappe_candidates.get((company, number), [])
+        if len(choices) != 1 or choices[0] in assigned:
+            continue
+        row.employee = choices[0]
+        assigned.add(choices[0])
+        matched += 1
+    return matched
 
 
 def _apply(clients, leave, remuneration, employees):
     settings = frappe.get_single(SETTINGS)
     changed = False
-    stats = {'clients_added': 0, 'leave_types_added': 0,
-             'calculations_added': 0, 'employees_created': 0,
-             'employees_updated': 0, 'employee_rows_added': 0}
+    stats = dict(clients_added=0, leave_types_added=0, calculations_added=0,
+                 employees_created=0, employees_updated=0, employee_rows_added=0,
+                 auto_mapped=0, unmapped=0, company_fields_corrected=0)
+    companies = _unique_rows(settings.companies or [], lambda r: (_str(r.simplepay_client_id),), "company")
+    types = _unique_rows(settings.leave_types or [], lambda r: (_str(r.get("simplepay_client_id")), _str(r.simplepay_type_id)), "leave")
+    items = _unique_rows(settings.remuneration_mappings or [], lambda r: (_str(r.get("simplepay_client_id")), _str(r.simplepay_calculation)), "remuneration")
+    employee_rows = _unique_rows(settings.employee_map or [], lambda r: (_str(r.simplepay_employee),), "employee")
 
-    companies = _unique_rows(settings.get('companies') or [],
-                             lambda r: (str(r.simplepay_client_id or ''),), 'company')
-    types = _unique_rows(settings.get('leave_types') or [],
-                         lambda r: (str(r.get('simplepay_client_id') or ''), str(r.simplepay_type_id or '')), 'leave type')
-    items = _unique_rows(settings.get('remuneration_mappings') or [],
-                         lambda r: (str(r.get('simplepay_client_id') or ''), str(r.simplepay_calculation or '')), 'calculation')
-    employee_rows = _unique_rows(settings.get('employee_map') or [],
-                                 lambda r: (str(r.simplepay_employee or ''),), 'employee')
-
+    # The importer must NEVER assume the bench's default Company.
+    # Only a deliberate choice already present in Company Mapping is trusted.
     for cid, label in clients.items():
         row = companies.get((cid,))
         if not row:
-            row = settings.append('companies', {'simplepay_client_id': cid, 'enabled': 0})
+            row = settings.append("companies", {"simplepay_client_id": cid, "enabled": 0})
+            row.company = None  # Explicitly clear Frappe Link defaults on newly appended rows.
             companies[(cid,)] = row
             changed = True
-            stats['clients_added'] += 1
-        if row.get('simplepay_client_name') != label:
-            row.simplepay_client_name = label
-            changed = True
-
+            stats["clients_added"] += 1
+        changed |= _set_if_changed(row, "simplepay_client_name", label)
     client_company = {cid: (row.company or None) for (cid,), row in companies.items()}
     for (cid, tid), label in leave.items():
         row = types.get((cid, tid))
         if not row:
-            row = settings.append('leave_types', {
-                'simplepay_client_id': cid, 'simplepay_type_id': tid,
-                'enabled': 1, 'company': client_company.get(cid),
-            })
+            row = settings.append("leave_types", {"simplepay_client_id": cid, "simplepay_type_id": tid, "enabled": 1})
+            row.leave_type = None
             types[(cid, tid)] = row
             changed = True
-            stats['leave_types_added'] += 1
-        if row.get('simplepay_type_name') != label:
-            row.simplepay_type_name = label
+            stats["leave_types_added"] += 1
+        changed |= _set_if_changed(row, "simplepay_type_name", label)
+        if _set_if_changed(row, "company", client_company.get(cid)):
+            stats["company_fields_corrected"] += 1
             changed = True
-        if not row.company and client_company.get(cid):
-            row.company = client_company[cid]
-            changed = True
-
     for (cid, ident), item in remuneration.items():
         row = items.get((cid, ident))
         if not row:
-            row = settings.append('remuneration_mappings', {
-                'simplepay_client_id': cid, 'simplepay_calculation': ident,
-                'company': client_company.get(cid), 'enabled': 1,
-            })
+            row = settings.append("remuneration_mappings", {"simplepay_client_id": cid, "simplepay_calculation": ident, "enabled": 1})
+            row.salary_component = None
             items[(cid, ident)] = row
             changed = True
-            stats['calculations_added'] += 1
-        if row.get('simplepay_item_label') != item['label']:
-            row.simplepay_item_label = item['label']
-            changed = True
-        if row.get('simplepay_item_type') != item['type']:
-            row.simplepay_item_type = item['type']
-            changed = True
-        if not row.company and client_company.get(cid):
-            row.company = client_company[cid]
+            stats["calculations_added"] += 1
+        changed |= _set_if_changed(row, "simplepay_item_label", item["label"])
+        changed |= _set_if_changed(row, "simplepay_item_type", item["type"])
+        if _set_if_changed(row, "company", client_company.get(cid)):
+            stats["company_fields_corrected"] += 1
             changed = True
 
-    for eid, record in employees.items():
-        old = frappe.db.get_value(DIRECTORY, f'SP-{eid}',
-                                  ['simplepay_client_id'], as_dict=True)
-        if old and str(old.simplepay_client_id) != record['simplepay_client_id']:
-            raise simplepay.SimplePayError(f'SimplePay employee {eid} moved client; review manually')
+    # Reject cross-client reassignment of SimplePay Employee ID before any directory changes.
+    for employee_id, rec in employees.items():
+        old = frappe.db.get_value(DIRECTORY, f"SP-{employee_id}", "simplepay_client_id")
+        if old and _str(old) != rec["simplepay_client_id"]:
+            raise simplepay.SimplePayError(f"SimplePay employee {employee_id} changed client; review manually")
 
     at = now_datetime()
-    for eid, record in employees.items():
-        name = f'SP-{eid}'
-        record['company'] = client_company.get(record['simplepay_client_id'])
-        record['is_active'] = 1
-        record['last_seen'] = at
+    for employee_id, rec in employees.items():
+        name = f"SP-{employee_id}"
+        doc_values = dict(rec, company=client_company.get(rec["simplepay_client_id"]), is_active=1, last_seen=at)
         if frappe.db.exists(DIRECTORY, name):
-            frappe.db.set_value(DIRECTORY, name, record, update_modified=True)
-            stats['employees_updated'] += 1
+            frappe.db.set_value(DIRECTORY, name, doc_values, update_modified=True)
+            stats["employees_updated"] += 1
         else:
-            frappe.get_doc(dict(doctype=DIRECTORY, **record)).insert(ignore_permissions=True)
-            stats['employees_created'] += 1
-        if (name,) not in employee_rows:
-            row = settings.append('employee_map', {'simplepay_employee': name})
+            frappe.get_doc({"doctype": DIRECTORY, **doc_values}).insert(ignore_permissions=True)
+            stats["employees_created"] += 1
+        row = employee_rows.get((name,))
+        if not row:
+            row = settings.append("employee_map", {"simplepay_employee": name})
+            row.employee = None
             employee_rows[(name,)] = row
-            stats['employee_rows_added'] += 1
             changed = True
+            stats["employee_rows_added"] += 1
+        # All user-facing fields are snapshots of the source record, not mapping guesses.
+        changed |= _set_if_changed(row, "employee_number", rec["employee_number"])
+        changed |= _set_if_changed(row, "first_name", rec["first_name"])
+        changed |= _set_if_changed(row, "last_name", rec["last_name"])
 
-    changed |= _reorder(settings, 'companies', lambda r: _sort_num(r.simplepay_client_id))
-    changed |= _reorder(settings, 'leave_types', lambda r: (_sort_num(r.get('simplepay_client_id')), _sort_num(r.simplepay_type_id)))
-    changed |= _reorder(settings, 'remuneration_mappings', lambda r: (_sort_num(r.get('simplepay_client_id')), str(r.simplepay_calculation or '')))
-    changed |= _reorder(settings, 'employee_map', lambda r: _sort_num(str(r.simplepay_employee or '').removeprefix('SP-')))
+    # Always reconcile imported Company fields, including clearing previously
+    # wrong defaults. Also let Settings.validate propagate to historical child rows.
+    for table in ("leave_types", "remuneration_mappings"):
+        for row in settings.get(table) or []:
+            cid = _str(row.get("simplepay_client_id"))
+            if _set_if_changed(row, "company", client_company.get(cid)):
+                changed = True
+                stats["company_fields_corrected"] += 1
+
+    matching_companies = {cid: (row.company or None) if row.enabled else None
+                          for (cid,), row in companies.items()}
+    stats["auto_mapped"] = _automap_employees(settings, employees, matching_companies)
+    changed |= bool(stats["auto_mapped"])
+    stats["unmapped"] = sum(not bool(row.employee) for row in settings.employee_map or [])
+
+    changed |= _sort_rows(settings, "companies", lambda r: _sort_num(r.simplepay_client_id))
+    changed |= _sort_rows(settings, "leave_types", lambda r: (_sort_num(r.get("simplepay_client_id")), _sort_num(r.simplepay_type_id)))
+    changed |= _sort_rows(settings, "remuneration_mappings", lambda r: (_sort_num(r.get("simplepay_client_id")), _str(r.simplepay_calculation)))
+    changed |= _sort_rows(settings, "employee_map", lambda r: (_sort_num(r.employee_number), _sort_num(_str(r.simplepay_employee).removeprefix("SP-"))))
     if changed:
         settings.save(ignore_permissions=True)
-    stats.update({'client_rows': len(settings.get('companies') or []),
-                  'leave_rows': len(settings.get('leave_types') or []),
-                  'remuneration_rows': len(settings.get('remuneration_mappings') or []),
-                  'employee_rows': len(settings.get('employee_map') or []),
-                  'finished_at': str(at)})
+    stats.update(client_rows=len(settings.companies or []), leave_rows=len(settings.leave_types or []),
+                 remuneration_rows=len(settings.remuneration_mappings or []),
+                 employee_rows=len(settings.employee_map or []), finished_at=str(at))
     return stats
 
 
 def sync_all_mappings():
-    """Used by scheduler and manual queue; never writes to SimplePay."""
+    """Sole daily SimplePay mapping job, also used by manual refresh."""
     if not frappe.get_single(SETTINGS).enabled:
-        return {'skipped': 'SimplePay disabled'}
+        return {"skipped": "SimplePay disabled"}
     with frappe.cache().lock(LOCK_KEY, timeout=1800, blocking_timeout=1):
-        staged = _stage()
-        return _apply(*staged)
-
-
-
-def _automap_employees(settings):
-    """
-    Match SimplePay Payroll Number to Frappe Employee.name.
-
-    Never overwrite existing links.
-    Never match across companies.
-    """
-    company_map = {
-        str(row.simplepay_client_id): row.company
-        for row in settings.companies or []
-        if row.company
-    }
-
-    assigned = {
-        row.employee
-        for row in settings.employee_map or []
-        if row.employee
-    }
-
-    matched = 0
-
-    for row in settings.employee_map or []:
-        if row.employee or not row.simplepay_employee:
-            continue
-
-        sp = frappe.db.get_value(
-            "SimplePay Employee",
-            row.simplepay_employee,
-            [
-                "simplepay_client_id",
-                "employee_number",
-                "is_active",
-            ],
-            as_dict=True,
-        )
-
-        if not sp or not sp.is_active:
-            continue
-
-        payroll_number = str(
-            sp.employee_number or ""
-        ).strip()
-
-        company = company_map.get(
-            str(sp.simplepay_client_id)
-        )
-
-        if not payroll_number or not company:
-            continue
-
-        # Exact identifier comparison.
-        # Do not strip leading zeroes or guess.
-        candidates = frappe.get_all(
-            "Employee",
-            filters={
-                "name": payroll_number,
-                "company": company,
-                "status": "Active",
-            },
-            pluck="name",
-        )
-
-        if len(candidates) != 1:
-            continue
-
-        employee = candidates[0]
-
-        if employee in assigned:
-            continue
-
-        row.employee = employee
-        assigned.add(employee)
-        matched += 1
-
-    return matched
+        return _apply(*_stage())
 
 
 @frappe.whitelist()
 def refresh_all_mappings():
-    if not ({'System Manager', 'HR Manager'} & set(frappe.get_roles())):
-        frappe.throw(_('Not permitted'), frappe.PermissionError)
+    if not ({"System Manager", "HR Manager"} & set(frappe.get_roles())):
+        frappe.throw(_("Not permitted"), frappe.PermissionError)
     if not frappe.get_single(SETTINGS).enabled:
-        frappe.throw(_('Enable SimplePay first'))
-    frappe.enqueue('is_attendance.controllers.simplepay_mapping.sync_all_mappings',
-                   queue='long', enqueue_after_commit=True,
-                   job_name='simplepay-full-mapping-refresh')
-    return {'queued': True}
+        frappe.throw(_("Enable SimplePay first"))
+    frappe.enqueue("is_attendance.controllers.simplepay_mapping.sync_all_mappings",
+                   queue="long", enqueue_after_commit=True,
+                   job_name="simplepay-full-mapping-refresh")
+    return {"queued": True}
 
 
 @frappe.whitelist()
 def list_clients():
-    if not ({'System Manager', 'HR Manager'} & set(frappe.get_roles())):
-        frappe.throw(_('Not permitted'), frappe.PermissionError)
-    clients = _client_payload(simplepay._request('GET', 'clients/'))
-    return [{'id': cid, 'name': name} for cid, name in clients.items()]
+    if not ({"System Manager", "HR Manager"} & set(frappe.get_roles())):
+        frappe.throw(_("Not permitted"), frappe.PermissionError)
+    return [{"id": client_id, "name": name}
+            for client_id, name in _clients(simplepay._request("GET", "clients/")).items()]

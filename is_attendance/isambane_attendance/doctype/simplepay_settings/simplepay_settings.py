@@ -2,93 +2,72 @@
 # For license information, please see license.txt
 
 
-import frappe
 from frappe import _
+import frappe
 from frappe.model.document import Document
 
 
 class SimplePaySettings(Document):
     def validate(self):
-        self.propagate_companies()
-        self.validate_employee_mappings()
-        seen_companies = set()
-        seen_clients = set()
-        for row in self.companies or []:
-            if not row.enabled:
-                continue
-            if row.company in seen_companies or str(row.simplepay_client_id) in seen_clients:
-                frappe.throw(_('Duplicate active SimplePay Company or Client ID'))
-            seen_companies.add(row.company)
-            seen_clients.add(str(row.simplepay_client_id))
+        self._propagate_companies()
+        self._validate_mappings()
 
-        seen_directory = set()
-        seen_employee = set()
+    def _client_map(self):
+        result = {}
+        company_to_client = {}
+        for row in self.companies or []:
+            client = str(row.simplepay_client_id or "").strip()
+            if not client:
+                frappe.throw(_("Every Company Mapping row needs a SimplePay Client ID"))
+            if client in result:
+                frappe.throw(_("Duplicate SimplePay Client ID {0}").format(client))
+            company = row.company or None
+            if row.enabled and not company:
+                frappe.throw(_("Client {0} is enabled but has no mapped Frappe Company").format(client))
+            if company:
+                if company in company_to_client and company_to_client[company] != client:
+                    frappe.throw(_("Company {0} is mapped to multiple SimplePay clients").format(company))
+                company_to_client[company] = client
+            result[client] = company
+        return result
+
+    def _propagate_companies(self):
+        clients = self._client_map()
+        for table in ("leave_types", "remuneration_mappings"):
+            for row in self.get(table) or []:
+                row.company = clients.get(str(row.get("simplepay_client_id") or "").strip())
+
+    def _validate_mappings(self):
+        clients = self._client_map()
+        assigned_employees = set()
+        assigned_external = set()
         for row in self.employee_map or []:
-            if not row.simplepay_employee:
-                frappe.throw(_('Every SimplePay Employee Map row needs a SimplePay Employee'))
-            if row.simplepay_employee in seen_directory:
-                frappe.throw(_('A SimplePay Employee cannot appear more than once'))
-            seen_directory.add(row.simplepay_employee)
+            external = row.simplepay_employee
+            if not external:
+                frappe.throw(_("Every SimplePay Employee Map row needs a SimplePay Employee"))
+            if external in assigned_external:
+                frappe.throw(_("Duplicate SimplePay Employee {0}").format(external))
+            assigned_external.add(external)
             if not row.employee:
                 continue
-            if row.employee in seen_employee:
-                frappe.throw(_('A Frappe Employee cannot be mapped to multiple SimplePay employees'))
-            seen_employee.add(row.employee)
-            directory = frappe.db.get_value('SimplePay Employee', row.simplepay_employee,
-                                            ['company', 'simplepay_client_id', 'is_active'], as_dict=True)
+            if row.employee in assigned_employees:
+                frappe.throw(_("Frappe Employee {0} is mapped more than once").format(row.employee))
+            assigned_employees.add(row.employee)
+            directory = frappe.db.get_value("SimplePay Employee", external,
+                                            ["simplepay_client_id", "employee_number"], as_dict=True)
             if not directory:
-                frappe.throw(_('SimplePay Employee record missing: {0}').format(row.simplepay_employee))
-            employee_company = frappe.db.get_value('Employee', row.employee, 'company')
-            if employee_company != directory.company:
-                frappe.throw(_('Company mismatch for mapped Employee {0}').format(row.employee))
-            active_clients = [str(c.simplepay_client_id) for c in self.companies or []
-                              if c.enabled and c.company == employee_company]
-            if str(directory.simplepay_client_id) not in active_clients:
-                frappe.throw(_('Mapped employee belongs to an unconfigured SimplePay payroll'))
+                frappe.throw(_("SimplePay Employee record not found: {0}").format(external))
+            expected_company = clients.get(str(directory.simplepay_client_id))
+            employee_company = frappe.db.get_value("Employee", row.employee, "company")
+            if not expected_company or employee_company != expected_company:
+                frappe.throw(_("Company mismatch for Employee {0} and SimplePay Employee {1}").format(row.employee, external))
 
-    def propagate_companies(self):
-        client_map = {}
-
-        for row in self.companies or []:
-            client_id = str(row.simplepay_client_id or "").strip()
-
-            if not client_id:
-                continue
-
-            if client_id in client_map:
-                frappe.throw(
-                    _("Duplicate SimplePay Client ID: {0}").format(
-                        client_id
-                    )
-                )
-
-            client_map[client_id] = row.company or None
-
-        for table_name in ("leave_types", "remuneration_mappings"):
-            for row in self.get(table_name) or []:
-                client_id = str(
-                    row.simplepay_client_id or ""
-                ).strip()
-                row.company = client_map.get(client_id)
-
-    def validate_employee_mappings(self):
-        assigned = set()
-        external = set()
-
-        for row in self.employee_map or []:
-            if row.simplepay_employee in external:
-                frappe.throw(
-                    _("Duplicate SimplePay Employee mapping: {0}")
-                    .format(row.simplepay_employee)
-                )
-
-            external.add(row.simplepay_employee)
-
-            if row.employee:
-                if row.employee in assigned:
-                    frappe.throw(
-                        _("Employee {0} is mapped more than once")
-                        .format(row.employee)
-                    )
-
-                assigned.add(row.employee)
+    def on_update(self):
+        clients = self._client_map()
+        for client_id, company in clients.items():
+            rows = frappe.get_all("SimplePay Employee", filters={"simplepay_client_id": client_id},
+                                  fields=["name", "company"])
+            for row in rows:
+                if row.company != company:
+                    frappe.db.set_value("SimplePay Employee", row.name, "company", company,
+                                        update_modified=False)
