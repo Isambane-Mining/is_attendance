@@ -1,39 +1,6 @@
 # Copyright (c) 2026, BuFf0k and contributors
 # For license information, please see license.txt
 
-"""
-Shared plumbing behind Sage Payroll Run - receiving the employee list
-sage_employee_puller.py (Windows host, next to Sage VIP Premier's ODBC
-DSNs) pulls straight from Sage, computing each matched employee's Normal /
-Overtime 1.5 / Leave hours for the period from our own Employee Checkin /
-Leave Application data, and generating the fixed-width .txt Sage's own
-Batch Import function expects.
-
-Pull direction is heartbeat-driven, not on-demand: sage_employee_puller.py
-runs continuously on the Windows host and polls list_pending_pull_requests()
-every cycle rather than being invoked with a specific Run to fetch. A
-person requests a pull by clicking "Request Employee Pull" on a Sage
-Payroll Run (SagePayrollRun.request_employee_pull, sets Status to "Pull
-Requested"); the heartbeat's next poll finds it, does the real ODBC work,
-and posts the result to ingest_employees() - same as before, just no
-longer needing a person to go run a script by hand with the right
-arguments. See is_attendance/payroll_controllers/README_CON.md.
-
-The .txt format and the live Sage query it's paired with were both
-reverse-engineered this session from real files - see
-is_attendance/payroll_controllers/README_CON.md and the plan this feature
-was built from for the full evidence trail. Two things are deliberately
-left as flagged placeholders rather than guessed:
-
-- Overtime 2 is always 0 - no trigger rule for it exists anywhere in the
-  source VBA (BatchImport_Premier_PV3.xls) or the process documentation.
-- A full leave day is credited DEFAULT_LEAVE_DAY_HOURS (12, the most common
-  shift length in the one real sample sheet available) - the real sheet's
-  own "A/LEAVE 12Hrs OR 10Hrs" / "9Hrs OR 8Hrs" columns suggest this
-  actually varies by site/shift, but no rule for *which* applies when was
-  documented anywhere available this session.
-"""
-
 from __future__ import annotations
 
 from datetime import time as dt_time

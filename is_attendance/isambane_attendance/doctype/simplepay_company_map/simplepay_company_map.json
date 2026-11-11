@@ -7,19 +7,38 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "section_break_gxu8"
+  "company",
+  "simplepay_client_id",
+  "enabled"
  ],
  "fields": [
   {
-   "fieldname": "section_break_gxu8",
-   "fieldtype": "Section Break"
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Company",
+   "options": "Company",
+   "reqd": 1
+  },
+  {
+   "fieldname": "simplepay_client_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "SimplePay Client ID",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-11-10 13:57:31.027443",
+ "modified": "2026-11-11 10:51:17.572987",
  "modified_by": "Administrator",
  "module": "Isambane Attendance",
  "name": "SimplePay Company Map",

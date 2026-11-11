@@ -8,7 +8,14 @@
   "enabled",
   "api_base_url",
   "api_key",
-  "timeout_seconds"
+  "timeout_seconds",
+  "companies",
+  "sync_approved_leave",
+  "sync_cancelled_leave",
+  "leave_date_mode",
+  "half_day_hours",
+  "leave_types",
+  "remuneration_mappings"
  ],
  "fields": [
   {
@@ -18,6 +25,7 @@
    "label": "Enable SimplePay"
   },
   {
+   "default": "https://api.payroll.simplepay.cloud/v1",
    "fieldname": "api_base_url",
    "fieldtype": "Data",
    "label": "API Base URL"
@@ -35,13 +43,57 @@
    "label": "Request Timeout (Seconds)",
    "non_negative": 1,
    "reqd": 1
+  },
+  {
+   "fieldname": "companies",
+   "fieldtype": "Table",
+   "label": "Company Mapping",
+   "options": "SimplePay Company Map"
+  },
+  {
+   "default": "0",
+   "fieldname": "sync_approved_leave",
+   "fieldtype": "Check",
+   "label": "Send Approved Leave"
+  },
+  {
+   "default": "0",
+   "fieldname": "sync_cancelled_leave",
+   "fieldtype": "Check",
+   "label": "Send Leave Cancellations"
+  },
+  {
+   "default": "All Calendar Days",
+   "fieldname": "leave_date_mode",
+   "fieldtype": "Select",
+   "label": "Leave Date Selection",
+   "options": "All Calendar Days\nEmployee Holiday List"
+  },
+  {
+   "fieldname": "half_day_hours",
+   "fieldtype": "Float",
+   "label": "Half-Day Hours",
+   "non_negative": 1,
+   "precision": "2"
+  },
+  {
+   "fieldname": "leave_types",
+   "fieldtype": "Table",
+   "label": "Leave Type Mappings",
+   "options": "SimplePay Leave Type Map"
+  },
+  {
+   "fieldname": "remuneration_mappings",
+   "fieldtype": "Table",
+   "label": "Salary Component Mappings",
+   "options": "SimplePay Remuneration Map"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-10 13:53:18.097784",
+ "modified": "2026-11-11 11:00:26.444238",
  "modified_by": "Administrator",
  "module": "Isambane Attendance",
  "name": "SimplePay Settings",
