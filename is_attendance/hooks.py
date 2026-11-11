@@ -32,8 +32,14 @@ doc_events = {
 		"after_insert": "is_attendance.controllers.attendance_sync.on_employee_checkin",
 	},
 	"Leave Application": {
-		"on_submit": "is_attendance.controllers.attendance_sync.on_leave_application_change",
-		"on_cancel": "is_attendance.controllers.attendance_sync.on_leave_application_change",
+		"on_submit": [
+			"is_attendance.controllers.attendance_sync.on_leave_application_change",
+			"is_attendance.controllers.simplepay.on_submit",
+		],
+		"on_cancel": [
+			"is_attendance.controllers.attendance_sync.on_leave_application_change",
+			"is_attendance.controllers.simplepay.on_cancel",
+		],
 		"on_update_after_submit": "is_attendance.controllers.attendance_sync.on_leave_application_change",
 	},
 }
@@ -41,6 +47,7 @@ scheduler_events = {
 	"daily": [
 		"is_attendance.controllers.attendance_sync.enqueue_daily_sync",
 		"is_attendance.controllers.watch_group_digest.send_daily_watch_group_digests",
+		"is_attendance.controllers.simplepay_mapping.sync_all_mappings",
 	],
 	"weekly": [
 		"is_attendance.controllers.watch_group_digest.send_weekly_watch_group_digests",
@@ -49,10 +56,6 @@ scheduler_events = {
 		"is_attendance.controllers.watch_group_digest.send_monthly_watch_group_digests",
 	],
 	"cron": {
-		# A document can only genuinely still be "Importing" for as long as
-		# IMPORT_JOB_TIMEOUT allows - checking every 15 minutes catches a
-		# real stall reasonably soon after that ceiling, without being so
-		# frequent it's doing real work most ticks find nothing to do.
 		"*/15 * * * *": [
 			"is_attendance.controllers.clocking_import.recover_stalled_imports",
 		],
@@ -65,4 +68,8 @@ permission_query_conditions = {
 has_permission = {
 	"Employee Checkin": "is_attendance.permissions.employee_checkin_has_permission",
 	"Clocking Adjustment": "is_attendance.permissions.clocking_adjustment_has_permission",
+}
+doctype_js = {
+	"SimplePay Settings": "public/js/simplepay_settings.js",
+	"Leave Application": "public/js/simplepay_leave_application.js",
 }

@@ -1,0 +1,141 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "creation": "2026-11-11 11:01:03.093738",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "leave_application",
+  "employee",
+  "company",
+  "simplepay_employee_id",
+  "simplepay_type_id",
+  "dates_json",
+  "external_ids_json",
+  "last_error",
+  "last_attempt",
+  "synced_at"
+ ],
+ "fields": [
+  {
+   "fieldname": "leave_application",
+   "fieldtype": "Link",
+   "label": "Leave Application",
+   "options": "Leave Application",
+   "unique": 1
+  },
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "label": "Employee",
+   "options": "Employee"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company"
+  },
+  {
+   "fieldname": "simplepay_employee_id",
+   "fieldtype": "Data",
+   "label": "SimplePay Employee ID"
+  },
+  {
+   "fieldname": "simplepay_type_id",
+   "fieldtype": "Data",
+   "label": "SimplePay Type ID"
+  },
+  {
+   "fieldname": "dates_json",
+   "fieldtype": "JSON",
+   "label": "Dates"
+  },
+  {
+   "fieldname": "external_ids_json",
+   "fieldtype": "JSON",
+   "label": "External IDs"
+  },
+  {
+   "fieldname": "last_error",
+   "fieldtype": "Small Text",
+   "label": "Last Error"
+  },
+  {
+   "fieldname": "last_attempt",
+   "fieldtype": "Datetime",
+   "label": "Last Attempt"
+  },
+  {
+   "fieldname": "synced_at",
+   "fieldtype": "Datetime",
+   "label": "Synced At"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-11-11 11:07:34.790039",
+ "modified_by": "Administrator",
+ "module": "Isambane Attendance",
+ "name": "SimplePay Leave Sync",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager",
+   "share": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [
+  {
+   "color": "Blue",
+   "title": "Pending"
+  },
+  {
+   "color": "Yellow",
+   "title": "Syncing"
+  },
+  {
+   "color": "Green",
+   "title": "Synced"
+  },
+  {
+   "color": "Red",
+   "title": "Error"
+  },
+  {
+   "color": "Red",
+   "title": "Uncertain"
+  },
+  {
+   "color": "Yellow",
+   "title": "Pending Cancellation"
+  },
+  {
+   "color": "Green",
+   "title": "Cancelled"
+  }
+ ]
+}
