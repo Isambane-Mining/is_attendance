@@ -42,7 +42,18 @@ jobs:
 
       - name: Push merged branch
         if: steps.merge.outputs.conflict == 'false'
-        run: git push origin ${{ matrix.branch }}
+        run: |
+          for attempt in 1 2 3; do
+            if git push origin ${{ matrix.branch }}; then
+              exit 0
+            fi
+
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+
+            sleep $((attempt * 10))
+          done
 
       - name: Open PR when merge conflicts
         if: steps.merge.outputs.conflict == 'true'
