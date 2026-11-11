@@ -15,7 +15,8 @@
   "leave_date_mode",
   "half_day_hours",
   "leave_types",
-  "remuneration_mappings"
+  "remuneration_mappings",
+  "employee_map"
  ],
  "fields": [
   {
@@ -87,13 +88,19 @@
    "fieldtype": "Table",
    "label": "Salary Component Mappings",
    "options": "SimplePay Remuneration Map"
+  },
+  {
+   "fieldname": "employee_map",
+   "fieldtype": "Table",
+   "label": "Employee Mapping",
+   "options": "SimplePay Employee Map"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-11 11:00:26.444238",
+ "modified": "2026-11-11 19:27:07.899410",
  "modified_by": "Administrator",
  "module": "Isambane Attendance",
  "name": "SimplePay Settings",
