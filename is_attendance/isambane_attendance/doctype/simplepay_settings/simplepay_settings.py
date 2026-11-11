@@ -1,9 +1,45 @@
 # Copyright (c) 2026, BuFf0k and contributors
 # For license information, please see license.txt
 
-# import frappe
+
+import frappe
+from frappe import _
 from frappe.model.document import Document
 
 
 class SimplePaySettings(Document):
-	pass
+    def validate(self):
+        seen_companies = set()
+        seen_clients = set()
+        for row in self.companies or []:
+            if not row.enabled:
+                continue
+            if row.company in seen_companies or str(row.simplepay_client_id) in seen_clients:
+                frappe.throw(_('Duplicate active SimplePay Company or Client ID'))
+            seen_companies.add(row.company)
+            seen_clients.add(str(row.simplepay_client_id))
+
+        seen_directory = set()
+        seen_employee = set()
+        for row in self.employee_map or []:
+            if not row.simplepay_employee:
+                frappe.throw(_('Every SimplePay Employee Map row needs a SimplePay Employee'))
+            if row.simplepay_employee in seen_directory:
+                frappe.throw(_('A SimplePay Employee cannot appear more than once'))
+            seen_directory.add(row.simplepay_employee)
+            if not row.employee:
+                continue  # The scheduled import creates unmapped rows.
+            if row.employee in seen_employee:
+                frappe.throw(_('A Frappe Employee cannot be mapped to multiple SimplePay employees'))
+            seen_employee.add(row.employee)
+            directory = frappe.db.get_value('SimplePay Employee', row.simplepay_employee,
+                                            ['company', 'simplepay_client_id', 'is_active'], as_dict=True)
+            if not directory:
+                frappe.throw(_('SimplePay Employee record missing: {0}').format(row.simplepay_employee))
+            employee_company = frappe.db.get_value('Employee', row.employee, 'company')
+            if employee_company != directory.company:
+                frappe.throw(_('Company mismatch for mapped Employee {0}').format(row.employee))
+            active_clients = [str(c.simplepay_client_id) for c in self.companies or []
+                              if c.enabled and c.company == employee_company]
+            if str(directory.simplepay_client_id) not in active_clients:
+                frappe.throw(_('Mapped employee belongs to an unconfigured SimplePay payroll'))
