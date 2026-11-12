@@ -58,18 +58,18 @@
    "read_only": 1
   }
  ],
- "grid_page_length": 50,
+ "grid_page_length": 200,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-11-11 20:44:17.138481",
+ "modified": "2026-11-12 11:17:39.593987",
  "modified_by": "Administrator",
  "module": "Isambane Attendance",
  "name": "SimplePay Employee Map",
  "owner": "Administrator",
  "permissions": [],
  "row_format": "Dynamic",
- "rows_threshold_for_grid_search": 20,
+ "rows_threshold_for_grid_search": 200,
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": []

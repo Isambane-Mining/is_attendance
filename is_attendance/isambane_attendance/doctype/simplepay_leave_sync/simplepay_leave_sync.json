@@ -15,7 +15,8 @@
   "external_ids_json",
   "last_error",
   "last_attempt",
-  "synced_at"
+  "synced_at",
+  "status"
  ],
  "fields": [
   {
@@ -71,12 +72,19 @@
    "fieldname": "synced_at",
    "fieldtype": "Datetime",
    "label": "Synced At"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Pending\nSyncing\nSynced\nError\nUncertain\nPending Cancellation\nCancelled",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-11 11:07:34.790039",
+ "modified": "2026-11-12 11:20:21.762633",
  "modified_by": "Administrator",
  "module": "Isambane Attendance",
  "name": "SimplePay Leave Sync",
@@ -108,34 +116,5 @@
  "rows_threshold_for_grid_search": 20,
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": [
-  {
-   "color": "Blue",
-   "title": "Pending"
-  },
-  {
-   "color": "Yellow",
-   "title": "Syncing"
-  },
-  {
-   "color": "Green",
-   "title": "Synced"
-  },
-  {
-   "color": "Red",
-   "title": "Error"
-  },
-  {
-   "color": "Red",
-   "title": "Uncertain"
-  },
-  {
-   "color": "Yellow",
-   "title": "Pending Cancellation"
-  },
-  {
-   "color": "Green",
-   "title": "Cancelled"
-  }
- ]
+ "states": []
 }
