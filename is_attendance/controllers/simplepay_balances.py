@@ -2,7 +2,6 @@
 # SimplePay balances are authoritative; this module never writes to SimplePay.
 
 import json
-from collections import defaultdict
 from decimal import Decimal, InvalidOperation
 
 import frappe
@@ -13,6 +12,7 @@ from is_attendance.controllers import simplepay, simplepay_mapping
 
 DIRECTORY = "SimplePay Employee"
 SETTINGS = "SimplePay Settings"
+PAYROLL_FIELD = "ir_leave_as_per_payroll"
 
 
 def _str(value):
@@ -20,11 +20,7 @@ def _str(value):
 
 
 def _balanced_payload(payload):
-    """Normalize the documented date-specific response and 'latest' list.
-
-    An absent leave type is NOT a zero balance. Nonnumeric categories such as
-    Unpaid are not converted to numeric leave entitlements.
-    """
+    """Normalize date-specific or latest balances without inventing entitlements."""
     result = {}
     if isinstance(payload, dict):
         iterable = [{"type_id": key, "balance": value} for key, value in payload.items()]
@@ -97,8 +93,8 @@ def _configured_pairs(settings):
 
 
 def _enabled_type_ids(settings, client_id):
-    return { _str(row.simplepay_type_id) for row in settings.leave_types or []
-        if row.enabled and row.leave_type and _str(row.get("simplepay_client_id")) == client_id }
+    return {_str(row.simplepay_type_id) for row in settings.leave_types or []
+            if row.enabled and row.leave_type and _str(row.get("simplepay_client_id")) == client_id}
 
 
 def _refresh_all_balances():
@@ -118,7 +114,6 @@ def _refresh_all_balances():
             response = simplepay._request("GET", f"employees/{int(sp_id)}/leave_balances",
                 params={"date": today})
             balances = _balanced_payload(response)
-            # Do not replace an existing successful snapshot with incomplete data.
             missing = expected - set(balances)
             if missing:
                 raise simplepay.SimplePayError(
@@ -133,8 +128,6 @@ def _refresh_all_balances():
             "leave_balances_json": json.dumps({"as_of": today, "balances": balances}, sort_keys=True),
             "leave_balances_fetched_at": fetched_at,
         }, update_modified=False)
-    # Partial failures retain previous snapshots, but these must never be treated
-    # as authoritative for approval; approval always performs a fresh GET.
     if errors:
         frappe.log_error(title="SimplePay balance pull errors", message=json.dumps(errors[:50]))
     return {"mapped_employees": len(pairs), "updated": len(staged), "failed": len(errors),
@@ -142,7 +135,7 @@ def _refresh_all_balances():
 
 
 def sync_daily():
-    """One scheduled job: catalogue first, balances second; never two daily hooks."""
+    """One scheduled job: catalogue first, balances second."""
     settings = frappe.get_single(SETTINGS)
     if not settings.enabled:
         return {"skipped": "SimplePay disabled"}
@@ -164,27 +157,76 @@ def pull_leave_balances():
     return _refresh_all_balances()
 
 
-def before_submit(doc, method=None):
-    """Fail-closed against SimplePay when the selected company/leave is mapped.
+def _application_mapping(employee, company=None):
+    """Differentiate an unmapped employee from a broken SimplePay mapping."""
+    settings = frappe.get_single(SETTINGS)
+    rows = [row for row in settings.employee_map or [] if row.employee == employee]
+    if not rows:
+        return None
+    if len(rows) != 1:
+        raise simplepay.SimplePayError(f"Duplicate SimplePay mappings for Employee {employee}")
+    if not settings.enabled:
+        raise simplepay.SimplePayError("SimplePay is disabled for this mapped Employee")
+    if not company:
+        company = frappe.db.get_value("Employee", employee, "company")
+    return settings, company, simplepay._mapping(employee, company)
 
-    A daily snapshot is NEVER used as approval authorization. This uses an
-    on-demand GET; the API/leave-type mapping must be available or submission
-    is rejected. No SimplePay writes happen here.
-    """
+
+def _application_balance(employee, leave_type=None, as_of=None):
+    mapped = _application_mapping(employee)
+    if mapped is None:
+        return {"mapped": False, "source": "Manual", "balance": None}
+    settings, company, identity = mapped
+    date = getdate(as_of).isoformat() if as_of else getdate().isoformat()
+    if not leave_type:
+        return {"mapped": True, "source": "SimplePay", "balance": None, "as_of": date}
+    type_row = simplepay._type_row(settings, company, leave_type)
+    type_id = _str(type_row.simplepay_type_id)
+    response = simplepay._request("GET", f"employees/{int(identity['employee_id'])}/leave_balances",
+                                 params={"date": date})
+    balances = _balanced_payload(response)
+    if type_id not in balances or balances[type_id]["value"] is None:
+        raise simplepay.SimplePayError(
+            f"SimplePay has no numeric balance for {employee} / {leave_type} as of {date}")
+    return {"mapped": True, "source": "SimplePay", "balance": balances[type_id]["value"],
+            "leave_type": leave_type, "as_of": date}
+
+
+@frappe.whitelist()
+def get_application_payroll_balance(employee, leave_type=None, as_of=None):
+    if not employee or not frappe.has_permission("Employee", "read", employee):
+        frappe.throw(_("Not permitted"), frappe.PermissionError)
+    return _application_balance(employee, leave_type, as_of)
+
+
+def update_application_payroll_balance(doc, method=None):
+    """Update the custom payroll balance before persistence, never the HRMS ledger."""
+    if doc.docstatus != 0 or not doc.employee:
+        return
+    mapping = _application_mapping(doc.employee, doc.company)
+    if mapping is None:
+        return
+    if not frappe.get_meta("Leave Application").has_field(PAYROLL_FIELD):
+        frappe.throw(_("Missing Leave Application custom field: {0}").format(PAYROLL_FIELD))
+    if not doc.leave_type:
+        doc.set(PAYROLL_FIELD, None)
+        return
+    result = _application_balance(doc.employee, doc.leave_type, doc.from_date)
+    doc.set(PAYROLL_FIELD, result["balance"])
+
+
+def before_submit(doc, method=None):
+    """Validate entitlement on demand only when enabled; never modify HRMS ledger."""
     settings = frappe.get_single(SETTINGS)
     if (not settings.enabled or not settings.get("enforce_leave_balance")
             or doc.status != "Approved"):
         return
-    # Explicitly exempt Leave Without Pay, which does not require entitlement.
     if frappe.db.get_value("Leave Type", doc.leave_type, "is_lwp"):
         return
-    company_row = simplepay._company_row(settings, doc.company)
-    type_row = simplepay._type_row(settings, doc.company, doc.leave_type)
-    sp_type = _str(type_row.simplepay_type_id)
+    if _application_mapping(doc.employee, doc.company) is None:
+        return
     mapped = simplepay._mapping(doc.employee, doc.company, doc.leave_type)
-    if not sp_type.isdigit():
-        frappe.throw(_("Invalid SimplePay Leave Type mapping"))
-    # Balance as of application start, not yesterday's daily snapshot.
+    sp_type = _str(mapped["type_id"])
     request_date = getdate(doc.from_date).isoformat()
     response = simplepay._request("GET", f"employees/{int(mapped['employee_id'])}/leave_balances",
                                  params={"date": request_date})
@@ -204,7 +246,6 @@ def before_submit(doc, method=None):
 
 @frappe.whitelist()
 def refresh_all_data():
-    """Queue the same sequential sync invoked once per day by the scheduler."""
     simplepay._require_payroll_access()
     if not frappe.get_single(SETTINGS).enabled:
         frappe.throw(_("Enable SimplePay first"))

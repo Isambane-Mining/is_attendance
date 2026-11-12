@@ -32,9 +32,8 @@ doc_events = {
 		"after_insert": "is_attendance.controllers.attendance_sync.on_employee_checkin",
 	},
 	"Leave Application": {
-		"before_submit": (
-			"is_attendance.controllers.simplepay_balances.before_submit"
-		),
+		"validate": "is_attendance.controllers.simplepay_balances.update_application_payroll_balance",
+		"before_submit": "is_attendance.controllers.simplepay_balances.before_submit",
 		"on_submit": [
 			"is_attendance.controllers.attendance_sync.on_leave_application_change",
 			"is_attendance.controllers.simplepay.on_submit",
@@ -43,9 +42,7 @@ doc_events = {
 			"is_attendance.controllers.attendance_sync.on_leave_application_change",
 			"is_attendance.controllers.simplepay.on_cancel",
 		],
-		"on_update_after_submit": (
-			"is_attendance.controllers.attendance_sync.on_leave_application_change",
-		),
+		"on_update_after_submit": "is_attendance.controllers.attendance_sync.on_leave_application_change",
 	},
 }
 scheduler_events = {
