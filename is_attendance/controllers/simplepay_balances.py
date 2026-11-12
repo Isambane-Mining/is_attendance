@@ -172,7 +172,7 @@ def before_submit(doc, method=None):
     is rejected. No SimplePay writes happen here.
     """
     settings = frappe.get_single(SETTINGS)
-    if (not settings.enabled or not settings.get("enforce_simplepay_leave_balance")
+    if (not settings.enabled or not settings.get("enforce_leave_balance")
             or doc.status != "Approved"):
         return
     # Explicitly exempt Leave Without Pay, which does not require entitlement.
