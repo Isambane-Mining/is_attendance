@@ -33,8 +33,7 @@ doc_events = {
 	},
 	"Leave Application": {
 		"before_submit": (
-			"is_attendance.controllers.simplepay_balances."
-			"validate_before_submit"
+			"is_attendance.controllers.simplepay_balances.before_submit"
 		),
 		"on_submit": [
 			"is_attendance.controllers.attendance_sync.on_leave_application_change",
@@ -44,8 +43,9 @@ doc_events = {
 			"is_attendance.controllers.attendance_sync.on_leave_application_change",
 			"is_attendance.controllers.simplepay.on_cancel",
 		],
-		"on_update_after_submit":
+		"on_update_after_submit": (
 			"is_attendance.controllers.attendance_sync.on_leave_application_change",
+		),
 	},
 }
 scheduler_events = {

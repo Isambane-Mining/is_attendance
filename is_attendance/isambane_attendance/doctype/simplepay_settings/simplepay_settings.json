@@ -14,6 +14,7 @@
   "companies",
   "remuneration_mappings",
   "leave_control",
+  "sync_leave_balances",
   "sync_approved_leave",
   "sync_cancelled_leave",
   "enforce_leave_balance",
@@ -135,13 +136,19 @@
    "fieldname": "employee_mappings",
    "fieldtype": "Tab Break",
    "label": "Employee Mappings"
+  },
+  {
+   "default": "0",
+   "fieldname": "sync_leave_balances",
+   "fieldtype": "Check",
+   "label": "Sync Leave Balances"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-12 11:17:18.151232",
+ "modified": "2026-11-12 11:27:06.337941",
  "modified_by": "Administrator",
  "module": "Isambane Attendance",
  "name": "SimplePay Settings",
