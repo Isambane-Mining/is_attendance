@@ -156,6 +156,11 @@ def on_submit(doc, method=None):
         return
     if _get_sync(doc.name):
         return
+
+    rows = [row for row in (settings.employee_map or []) if row.employee == doc.employee]
+    if not rows:
+        return
+
     mapped = _mapping(doc.employee, doc.company, doc.leave_type)
     dates = _days(doc, mapped['type_id'], settings)
     frappe.get_doc({
@@ -220,7 +225,7 @@ def process_approved_leave(application_name):
             raise SimplePayError('Employee / leave mapping changed after submission; manual review required')
         planned = json.loads(sync.dates_json or '[]')
         _save_status(name, 'Syncing', last_attempt=now_datetime())
-        frappe.db.commit()  # Durable marker before external POST.
+        frappe.db.commit()
         if any(_matches(x, p) for x in _external_days(sync.simplepay_employee_id) for p in planned):
             _save_status(name, 'Uncertain', 'Matching existing SimplePay leave; manual reconciliation required')
             return
@@ -426,8 +431,6 @@ def _refresh_directory():
             if name not in by_directory:
                 settings.append('employee_map', {'simplepay_employee': name})
                 added_rows += 1
-    # Sort by numeric SimplePay ID, NOT payroll number or lexicographic link name.
-    # Sorting includes historical rows, so their manually chosen Employee remains untouched.
     def key(row):
         directory_name = str(row.simplepay_employee or '')
         external_id = directory_name[3:] if directory_name.startswith('SP-') else directory_name
@@ -440,7 +443,6 @@ def _refresh_directory():
     if added_rows or new_order != prior_order:
         settings.save(ignore_permissions=True)
     else:
-        # Even without new rows the order is kept in memory; no need to rewrite settings.
         pass
     return {'created': created, 'updated': updated, 'inactive': deactivated,
             'added_to_mapping': added_rows, 'total_mapping_rows': len(settings.employee_map),
@@ -451,7 +453,6 @@ def sync_employee_directory():
     """Daily scheduler; API fetch then update, no changes to mapped Frappe Employees."""
     if not _settings().enabled:
         return
-    # The lock prevents overlapping scheduler / manual refreshes on the same site.
     with frappe.cache().lock('simplepay-employee-refresh', timeout=900, blocking_timeout=1):
         try:
             result = _refresh_directory()
