@@ -5,17 +5,25 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "api_settings",
   "enabled",
   "api_base_url",
   "api_key",
   "timeout_seconds",
+  "company_defaults",
   "companies",
+  "remuneration_mappings",
+  "leave_control",
+  "sync_leave_balances",
   "sync_approved_leave",
   "sync_cancelled_leave",
+  "enforce_leave_balance",
+  "column_break_djlk",
   "leave_date_mode",
   "half_day_hours",
+  "section_break_sdje",
   "leave_types",
-  "remuneration_mappings",
+  "employee_mappings",
   "employee_map"
  ],
  "fields": [
@@ -94,13 +102,53 @@
    "fieldtype": "Table",
    "label": "Employee Mapping",
    "options": "SimplePay Employee Map"
+  },
+  {
+   "default": "0",
+   "fieldname": "enforce_leave_balance",
+   "fieldtype": "Check",
+   "label": "Enforce SimplePay Leave Balance on Approval"
+  },
+  {
+   "fieldname": "api_settings",
+   "fieldtype": "Tab Break",
+   "label": "API Settings"
+  },
+  {
+   "fieldname": "company_defaults",
+   "fieldtype": "Tab Break",
+   "label": "Company Defaults"
+  },
+  {
+   "fieldname": "leave_control",
+   "fieldtype": "Tab Break",
+   "label": "Leave Control"
+  },
+  {
+   "fieldname": "column_break_djlk",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_sdje",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "employee_mappings",
+   "fieldtype": "Tab Break",
+   "label": "Employee Mappings"
+  },
+  {
+   "default": "0",
+   "fieldname": "sync_leave_balances",
+   "fieldtype": "Check",
+   "label": "Sync Leave Balances"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-11 19:27:07.899410",
+ "modified": "2026-11-12 11:27:06.337941",
  "modified_by": "Administrator",
  "module": "Isambane Attendance",
  "name": "SimplePay Settings",

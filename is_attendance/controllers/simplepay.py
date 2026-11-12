@@ -45,7 +45,7 @@ def _endpoint(settings):
 def _request(method, path, *, params=None, payload=None):
     settings = _settings()
     _enabled(settings)
-    api_key = settings.get_password('api_key')
+    api_key = (settings.get_password('api_key') or '').strip()
     if not api_key:
         raise SimplePayError('SimplePay API Key is missing')
     try:
