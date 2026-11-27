@@ -45,6 +45,9 @@ def _endpoint(settings):
 def _request(method, path, *, params=None, payload=None):
     settings = _settings()
     _enabled(settings)
+    if method.upper() != 'GET' and settings.get('read_only_mode'):
+        # Settings-driven guard at the single choke point for all SimplePay HTTP traffic.
+        raise SimplePayError(f'SimplePay Read-Only Mode is on; refused {method.upper()} {path}')
     api_key = (settings.get_password('api_key') or '').strip()
     if not api_key:
         raise SimplePayError('SimplePay API Key is missing')
@@ -67,26 +70,33 @@ def _request(method, path, *, params=None, payload=None):
         raise SimplePayError('SimplePay returned invalid JSON') from exc
 
 
-def _company_row(settings, company):
-    rows = [r for r in (settings.companies or []) if r.company == company and r.enabled]
-    if len(rows) != 1 or not str(rows[0].simplepay_client_id or '').isdigit():
-        raise SimplePayError(f'Exactly one enabled SimplePay client is required for {company}')
+def _client_row(settings, client_id):
+    """A Company may have several SimplePay clients; each client belongs to exactly one Company."""
+    client_id = str(client_id or '').strip()
+    rows = [r for r in (settings.companies or [])
+            if str(r.simplepay_client_id or '').strip() == client_id and r.enabled and r.company]
+    if not client_id.isdigit() or len(rows) != 1:
+        raise SimplePayError(f'SimplePay client {client_id or "?"} is not an enabled, Company-mapped client')
     return rows[0]
 
 
-def _type_row(settings, company, leave_type):
-    rows = [r for r in (settings.leave_types or []) if r.company == company and
+def _type_row(settings, client_id, leave_type):
+    rows = [r for r in (settings.leave_types or [])
+            if str(r.get('simplepay_client_id') or '').strip() == str(client_id) and
             r.leave_type == leave_type and r.enabled]
     if len(rows) != 1 or not str(rows[0].simplepay_type_id or '').isdigit():
-        raise SimplePayError(f'Exactly one leave type mapping required for {company} / {leave_type}')
+        raise SimplePayError(f'Exactly one leave type mapping required for client {client_id} / {leave_type}')
     return rows[0]
 
 
 def _mapping(employee, company, leave_type=None):
-    """Resolve one manually selected row, never try matching names or payroll numbers."""
+    """Resolve one manually selected row, never try matching names or payroll numbers.
+
+    The SimplePay client is taken from the Employee's single SimplePay record, then
+    checked to be an enabled client mapped to the Employee's Company.
+    """
     settings = _settings()
     _enabled(settings)
-    client_id = str(_company_row(settings, company).simplepay_client_id)
     rows = [r for r in (settings.employee_map or []) if r.employee == employee]
     if len(rows) != 1 or not rows[0].simplepay_employee:
         raise SimplePayError(f'Exactly one SimplePay mapping required for Employee {employee}')
@@ -94,13 +104,14 @@ def _mapping(employee, company, leave_type=None):
         ['simplepay_employee_id', 'simplepay_client_id', 'company', 'is_active'], as_dict=True)
     if not directory or not directory.is_active:
         raise SimplePayError(f'SimplePay directory employee is missing or inactive for {employee}')
-    if directory.company != company or str(directory.simplepay_client_id) != client_id:
+    client_id = str(directory.simplepay_client_id or '').strip()
+    if _client_row(settings, client_id).company != company or directory.company != company:
         raise SimplePayError(f'Employee {employee} is mapped to a different payroll company')
     if not str(directory.simplepay_employee_id or '').isdigit():
         raise SimplePayError(f'Invalid SimplePay ID for {employee}')
-    result = {'employee_id': str(directory.simplepay_employee_id)}
+    result = {'employee_id': str(directory.simplepay_employee_id), 'client_id': client_id}
     if leave_type:
-        result['type_id'] = int(_type_row(settings, company, leave_type).simplepay_type_id)
+        result['type_id'] = int(_type_row(settings, client_id, leave_type).simplepay_type_id)
     return result
 
 
@@ -152,7 +163,8 @@ def _queue(application, cancellation=False):
 
 def on_submit(doc, method=None):
     settings = _settings()
-    if doc.status != 'Approved' or not settings.enabled or not settings.sync_approved_leave:
+    if (doc.status != 'Approved' or not settings.enabled or not settings.sync_approved_leave
+            or settings.get('read_only_mode')):
         return
     if _get_sync(doc.name):
         return
@@ -284,8 +296,12 @@ def test_connection():
 @frappe.whitelist()
 def list_leave_types(company):
     _require_payroll_access()
-    row = _company_row(_settings(), company)
-    return _request('GET', f'clients/{int(row.simplepay_client_id)}/leave_types')
+    rows = [r for r in (_settings().companies or []) if r.company == company and r.enabled
+            and str(r.simplepay_client_id or '').strip().isdigit()]
+    if not rows:
+        raise SimplePayError(f'No enabled SimplePay client is mapped to {company}')
+    return {str(r.simplepay_client_id).strip():
+            _request('GET', f'clients/{int(r.simplepay_client_id)}/leave_types') for r in rows}
 
 
 @frappe.whitelist()
@@ -298,7 +314,7 @@ def get_leave_balances(employee, as_of=None):
             else ('latest' if as_of == 'latest' else getdate().isoformat()))
     payload = _request('GET', f"employees/{mapped['employee_id']}/leave_balances", params={'date': date})
     types = {str(x.simplepay_type_id): x.leave_type for x in _settings().leave_types
-             if x.company == employee_doc.company and x.enabled}
+             if str(x.get('simplepay_client_id') or '').strip() == mapped['client_id'] and x.enabled}
     if isinstance(payload, dict):
         balances = [{'type_id': k, 'leave_type': types.get(str(k)), 'balance': v, 'as_of': date}
                     for k, v in payload.items()]
@@ -359,8 +375,9 @@ def _configured_clients(settings):
             continue
         company = row.company
         client = str(row.simplepay_client_id or '')
-        if not company or not client.isdigit() or company in companies or client in clients:
-            raise SimplePayError('Every enabled Company must have a unique numeric SimplePay Client ID')
+        # A Company may own several clients; a client ID may appear only once (one Company).
+        if not company or not client.isdigit() or client in clients:
+            raise SimplePayError('Every enabled SimplePay client needs a Company and a unique numeric Client ID')
         companies.add(company)
         clients.add(client)
         result.append((company, client))
