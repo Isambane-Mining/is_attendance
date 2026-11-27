@@ -9,12 +9,41 @@ from frappe.model.document import Document
 
 class SimplePaySettings(Document):
     def validate(self):
+        if self.read_only_mode and (self.sync_approved_leave or self.sync_cancelled_leave):
+            frappe.throw(_("Leave push/cancel writes to SimplePay; untick Read-Only Mode first"))
         self._propagate_companies()
         self._validate_mappings()
+        self._validate_remuneration()
+
+    def _validate_remuneration(self):
+        """Mapping Status follows the Salary Component; the component type must fit the line type."""
+        from is_attendance.controllers.simplepay_mapping import component_type_for_line
+        components = {c.name: c for c in frappe.get_all(
+            "Salary Component", fields=["name", "type", "do_not_include_in_total", "statistical_component"],
+            filters={"name": ["in", list({r.salary_component for r in self.remuneration_mappings or []
+                                          if r.salary_component})]})}
+        for row in self.remuneration_mappings or []:
+            if not row.salary_component:
+                if row.mapping_status != "Ignored":
+                    row.mapping_status = "Unmapped"
+                continue
+            row.mapping_status = "Mapped"
+            line_type = row.simplepay_item_type
+            expected = component_type_for_line(line_type)
+            component = components.get(row.salary_component)
+            label = f"{row.simplepay_item_label} ({row.simplepay_client_id}, row {row.idx})"
+            if not expected or not component:
+                frappe.throw(_("SimplePay line {0} cannot be mapped").format(label))
+            if component.type != expected:
+                frappe.throw(_("SimplePay {0} line {1} needs a {2} Salary Component; {3} is {4}").format(
+                    line_type, label, expected, row.salary_component, component.type))
+            if line_type == "benefit" and not (component.do_not_include_in_total or component.statistical_component):
+                frappe.throw(_("SimplePay benefit line {0} is a non-cash fringe benefit; Salary Component {1} "
+                               "must be Do Not Include in Total or Statistical").format(label, row.salary_component))
 
     def _client_map(self):
+        """client ID -> Company. A Company may own several clients; a client only one Company."""
         result = {}
-        company_to_client = {}
         for row in self.companies or []:
             client = str(row.simplepay_client_id or "").strip()
             if not client:
@@ -24,10 +53,6 @@ class SimplePaySettings(Document):
             company = row.company or None
             if row.enabled and not company:
                 frappe.throw(_("Client {0} is enabled but has no mapped Frappe Company").format(client))
-            if company:
-                if company in company_to_client and company_to_client[company] != client:
-                    frappe.throw(_("Company {0} is mapped to multiple SimplePay clients").format(company))
-                company_to_client[company] = client
             result[client] = company
         return result
 

@@ -43,6 +43,32 @@ frappe.ui.form.on('SimplePay Settings', {
             );
         }, __('SimplePay'));
 
+        frm.add_custom_button(__('Scan Payslip Usage'), () => {
+            if (frm.is_dirty()) {
+                frappe.msgprint(__('Save Settings before scanning payslips.'));
+                return;
+            }
+            frappe.confirm(
+                __('Read each active employee\'s last 3 finalised SimplePay payslips and flag which output lines are in use? Read-only against SimplePay (about one request per employee plus one per payslip).'),
+                () => frappe.call({
+                    method: 'is_attendance.controllers.simplepay_mapping.queue_payslip_usage_scan',
+                    freeze: true,
+                    callback(r) {
+                        if (r.message?.queued) {
+                            frappe.msgprint(__('Payslip usage scan queued. Reload Settings when the background job finishes.'));
+                        }
+                    }
+                })
+            );
+        }, __('SimplePay'));
+
+        // Offer only Salary Components that fit the row's SimplePay line type. The fixed
+        // line type -> component type pairing lives server-side (simplepay_mapping.MAPPABLE_LINE_TYPES).
+        frm.set_query('salary_component', 'remuneration_mappings', (doc, cdt, cdn) => ({
+            query: 'is_attendance.controllers.simplepay_mapping.salary_component_query',
+            filters: { line_type: locals[cdt][cdn].simplepay_item_type || '' }
+        }));
+
         frm.add_custom_button(__('Pull Leave Balances'), () => {
             if (frm.is_dirty()) {
                 frappe.msgprint(__('Save Settings before pulling leave balances.'));
@@ -114,5 +140,13 @@ frappe.ui.form.on('SimplePay Leave Type Map', {
 frappe.ui.form.on('SimplePay Remuneration Map', {
     remuneration_mappings_add(frm, cdt, cdn) {
         frappe.model.set_value(cdt, cdn, 'company', '');
+    },
+    salary_component(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+        if (row.salary_component) {
+            frappe.model.set_value(cdt, cdn, 'mapping_status', 'Mapped');
+        } else if (row.mapping_status === 'Mapped') {
+            frappe.model.set_value(cdt, cdn, 'mapping_status', 'Unmapped');
+        }
     }
 });

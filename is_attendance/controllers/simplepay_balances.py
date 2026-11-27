@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 import frappe
 from frappe import _
 from frappe.utils import getdate, now_datetime, flt
+from rq.timeouts import JobTimeoutException
 
 from is_attendance.controllers import simplepay, simplepay_mapping
 
@@ -119,6 +120,10 @@ def _refresh_all_balances():
                 raise simplepay.SimplePayError(
                     f"Missing mapped leave types in response: {', '.join(sorted(missing))}")
             staged.append((directory_name, balances))
+        except JobTimeoutException:
+            # RQ's timeout is an Exception subclass; swallowing it here kept the loop running
+            # past the queue limit until the worker SIGKILLed the job (log stuck at "Start").
+            raise
         except Exception as exc:
             errors.append({"employee": employee, "error": str(exc)[:200]})
 
@@ -135,13 +140,27 @@ def _refresh_all_balances():
 
 
 def sync_daily():
-    """One scheduled job: catalogue first, balances second."""
-    settings = frappe.get_single(SETTINGS)
-    if not settings.enabled:
+    """daily_long scheduled job (long queue): catalogue first, balances second.
+
+    Each step commits on its own so one failing doesn't discard the other. Failures land
+    in Error Log and are re-raised so the Scheduled Job Log records "Failed"."""
+    if not frappe.get_single(SETTINGS).enabled:
         return {"skipped": "SimplePay disabled"}
-    catalogue = simplepay_mapping.sync_all_mappings()
-    balances = _refresh_all_balances()
-    return {"catalogue": catalogue, "balances": balances}
+    result, failed = {}, []
+    for key, step in (("catalogue", simplepay_mapping.sync_all_mappings), ("balances", _refresh_all_balances)):
+        try:
+            result[key] = step()
+            frappe.db.commit()
+        except JobTimeoutException:
+            frappe.db.rollback()
+            raise
+        except Exception:
+            frappe.db.rollback()
+            frappe.log_error(title=f"SimplePay daily sync: {key} failed", message=frappe.get_traceback())
+            failed.append(key)
+    if failed:
+        raise simplepay.SimplePayError(f"SimplePay daily sync failed: {', '.join(failed)} (see Error Log)")
+    return result
 
 
 @frappe.whitelist()
@@ -180,7 +199,7 @@ def _application_balance(employee, leave_type=None, as_of=None):
     date = getdate(as_of).isoformat() if as_of else getdate().isoformat()
     if not leave_type:
         return {"mapped": True, "source": "SimplePay", "balance": None, "as_of": date}
-    type_row = simplepay._type_row(settings, company, leave_type)
+    type_row = simplepay._type_row(settings, identity["client_id"], leave_type)
     type_id = _str(type_row.simplepay_type_id)
     response = simplepay._request("GET", f"employees/{int(identity['employee_id'])}/leave_balances",
                                  params={"date": date})
