@@ -6,3 +6,4 @@
 # Patches added in this section will be executed after doctypes are migrated
 is_attendance.patches.migrate_employee_checkin_site_to_isa_branch
 is_attendance.patches.backfill_clocking_import_uploaded_by
+is_attendance.patches.align_salary_components_with_simplepay

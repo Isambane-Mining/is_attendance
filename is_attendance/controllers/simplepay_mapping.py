@@ -361,6 +361,8 @@ def _apply(clients, leave, remuneration, employees):
                           for (cid,), row in companies.items()}
     stats["auto_mapped"] = _automap_employees(settings, employees, matching_companies)
     changed |= bool(stats["auto_mapped"])
+    stats["components_auto_mapped"] = automap_components(settings)
+    changed |= bool(stats["components_auto_mapped"])
     stats["unmapped"] = sum(not bool(row.employee) for row in settings.employee_map or [])
 
     changed |= _sort_rows(settings, "companies", lambda r: _sort_num(r.simplepay_client_id))
@@ -530,6 +532,31 @@ def queue_payslip_usage_scan(recent=3):
 def component_type_for_line(line_type):
     """The single HRMS Salary Component type a SimplePay line type may map to (None if unmappable)."""
     return MAPPABLE_LINE_TYPES.get(_str(line_type))
+
+
+def automap_components(settings):
+    """Map unmapped SimplePay lines to the Salary Component named exactly like the line.
+
+    Salary Components carry SimplePay's line labels, so an exact (case-sensitive) name match
+    is the mapping. Manual selections and Ignored rows are never touched; a name match whose
+    type doesn't fit the line type (or a benefit line onto a cash component) is skipped."""
+    components = {c.name: c for c in frappe.get_all(
+        "Salary Component", filters={"disabled": 0},
+        fields=["name", "type", "do_not_include_in_total", "statistical_component"])}
+    mapped = 0
+    for row in settings.remuneration_mappings or []:
+        if row.salary_component or row.mapping_status == "Ignored":
+            continue
+        component = components.get(_str(row.simplepay_item_label))
+        if not component or component.type != component_type_for_line(row.simplepay_item_type):
+            continue
+        if row.simplepay_item_type == "benefit" and not (component.do_not_include_in_total
+                                                         or component.statistical_component):
+            continue
+        row.salary_component = component.name
+        row.mapping_status = "Mapped"
+        mapped += 1
+    return mapped
 
 
 @frappe.whitelist()
